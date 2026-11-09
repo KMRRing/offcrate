@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Codex</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="chess-board.css">
+<link rel="stylesheet" href="deck.css">
+<link rel="stylesheet" href="codex-tabs.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="deck full titled fit-screen wide">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon dk-mark" aria-hidden="true"></span>Codex</button></h1>
+    <div class="top-right">
+      <button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button>
+    </div>
+  </header>
+
+  <section id="overview" class="dk-overview fit-col fit-grow">
+    <div class="dk-sum fit-half">
+    <p class="dk-lead" id="lead"></p>
+    <div class="dk-piles" id="piles"></div>
+    </div>
+    <div class="dk-more fit-half">
+    <div class="dk-lists fit-grow fit-scroll">
+      <div class="dk-games" id="games"></div>
+      <h3 class="dk-h" id="subjectsHead" hidden>By subject, across the games</h3>
+      <div class="dk-subjects" id="subjects"></div>
+    </div>
+    <p class="dk-cover"><span id="coverSay"></span><button class="link" type="button" id="scopeBtn">Choose</button></p>
+    <button class="dk-go" type="button" id="reviewBtn">Review</button>
+    </div>
+  </section>
+
+  <section id="review" class="dk-review fit-col fit-grow fit-scroll" hidden>
+    <div class="dk-face fit-half">
+    <div class="dk-head"><span id="progress"></span><span id="source"></span></div>
+    <p class="dk-ask" id="ask"></p>
+    <p class="dk-prompt" id="prompt"></p>
+    <div id="figure" class="dk-figure" hidden></div>
+    </div>
+    <div class="dk-reply fit-half">
+    <div id="answerBox" class="dk-answer"></div>
+    <p class="dk-verdict" id="verdict"></p>
+    <p class="dk-note" id="note"></p>
+    <button class="dk-go" type="button" id="nextBtn" hidden>Next</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<p id="toast" class="dk-toast" role="status" aria-live="polite"></p>
+<script src="bank.js"></script>
+<script type="module" src="deck.js"></script>
+</body>
+</html>

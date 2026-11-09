@@ -1,0 +1,1412 @@
+// Guandan (掼蛋) at a table of four, you and a computer partner across the table against two computer
+// players, or you and your partner together against them. The rules are tribute-engine.js's, the players
+// tribute-bot.js's (they think in tribute-worker.js, off this thread); this file deals, shows the table and your
+// cards in their columns, takes your plays, runs the others at a pace you can follow, keeps the levels over a match,
+// and coaches as you choose: a hint when you ask, the computer's play in your seat and why; a check of each move of
+// yours, where it would have played otherwise, by how much and why; or its play at every decision.
+import * as E from "./tribute-engine.js";
+import { split } from "./tribute-bot.js";
+import { bindSwitcher, APPS } from "./apps.js";
+import { createTogether, seatsOf, seatOfSlot, peopleSeats, runsElsewhere } from "./together.js";
+import { GAMES, roomInAddress, joiningWords } from "./rooms.js";
+import "./pwa.js";
+import { part, choice, toggle, action, line, onPause, isPaused } from "./menu.js";
+import { ramp } from "./ramp.js";
+import { roundOver } from "./random.js";
+import { IN_FRAME, noteStreak, today } from "./suite.js";
+import { wants3D, onDefaultChange } from "./mode3d.js";
+import { MODES, modeOf, clockText, strikeMarks, clockFor, runDown, graceAgain, timeUp, noteRun, bestsLine, endTitle } from "./rush-core.js";
+import { rushMenu } from "./rush-menu.js";
+import { sideways, SIDEWAYS } from "./wide.js";
+import { busy } from "./loading.js";
+import { createTable3d, cardFace, levelHtml } from "./tribute-3d.js";
+import { createCourse, progressOf } from "./course.js";
+import { COURSE } from "./tribute-lessons.js";
+import { cardStage } from "./tribute-course.js";
+
+const $ = id => document.getElementById(id);
+const RUN = "tribute:run", OPTS = "tribute:opts", STATS = "tribute:stats";
+// The coach: off; hints, when you ask; check, a hint when you ask and a word on each move of yours it would have made
+// otherwise; on (Always), its play at every decision as well.
+const COACH = ["off", "hints", "check", "on"];
+// the table as the cloth seen from above, or tipped away in perspective with its seats round it (tribute-3d.js)
+const VIEWS = [["flat", "Table"], ["3d", "3D"]];
+// 2: the table's coach and card counter are the table's, kept on every phone (an older page there updates first)
+const APP = 2;
+const BOTS = ["Wei", "Lin", "Fang"];                             // right, across (your partner), left
+const PACE = { quick: 420, steady: 850, slow: 1500 };
+const read = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
+const clone = x => JSON.parse(JSON.stringify(x));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// ---------- state ----------
+// G: the hand in play (the engine's state, the match's levels in it). S: the table: { names, humans }.
+let G = null, S = null;
+let opts = { mode: "deals", deals: 6, pace: "steady", counter: false, bots: "hard", coach: "hints", full: false, side: null, ...read(OPTS, {}) };
+if (!COACH.includes(opts.coach)) opts.coach = "hints";
+// Korbi, 4 November 2026: the menu is the minimum it needs to be. Six hands, a steady pace, no card counter, no full
+// screen, the cards held by the screen's shape, whatever an older save chose (a match in hand keeps its own rules). The
+// computer's strength is the hidden ramp, its first step the old saved choice; the coach is on or off.
+const OLD_BOTS = opts.bots;
+Object.assign(opts, { mode: "deals", deals: 6, pace: "steady", counter: false, full: false, side: null });
+if (!VIEWS.some(([k]) => k === opts.view)) delete opts.view;   // kept only when the player chose (else mode3d.js's default); "table" was the old default written into every save
+let table3d = null;                                              // the 3D view, once the page is wired (the foot of this file)
+const in3d = () => wants3D(opts.view, "3d") && !!table3d;
+let me = 0;
+// At a table together the coach and the card counter are the table's, the same on every phone: at a party its host sets
+// them (party-link.js knows who that is), at a pair's table either of you; solo, they're yours.
+let party = null;
+if (/[?&]party=[A-Za-z]{4}\b/.test(location.search)) import("./party-link.js").then(m => { party = m; }).catch(e => console.error(e));
+const coach = () => (together.room && COACH.includes(S?.coach) ? S.coach : opts.coach);
+const counting = () => (together.room && typeof S?.counter === "boolean" ? S.counter : !!opts.counter);
+/** Whether this phone sets the table's rules: solo, at a pair's table, or as a party's host. */
+const setsRules = () => !together.room || !party || party.partyHost()?.me === true;
+const selected = new Set();
+let hint = null;                                                 // { key, list, at, auto, ready }: the coach's plays now
+let C = [];                                                      // your moves this hand with the coach's: checked (check, always) or its pick
+const isHuman = seat => !!S?.humans?.includes(seat);
+const nameOf = seat => (seat === me && !together.room ? "You" : S?.names?.[seat] || "?");
+/** A seat as a sentence's subject: you as "You" at a table together too, where your seat is labelled with your name. */
+const who = seat => (seat === me ? "You" : nameOf(seat));
+const keyNow = () => (G ? `${G.handNo}:${G.log.length}` : "");
+/** A phone held sideways (tribute.css's last query): the table takes the screen, your cards lie along its edge. */
+const low = () => matchMedia(`${SIDEWAYS} and (max-height: 500px)`).matches;
+/** Held sideways, your cards stacked in columns (the default) or, by the Settings choice, in a row along the table's edge. */
+// Korbi, 8 Nov 2026: stacked by default, a phone held sideways too; "Spread out" (Settings) is the row.
+const sideOf = () => opts.side || "stack";
+const FACE = r => (r === 15 ? "lvl" : ["", "", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"][r] || "");
+
+// ---------- the computer players and the coach, each in a worker ----------
+// Two workers, so the coach's thinking (a check takes up to three seconds) never holds up a player's move.
+const workers = { players: null, coach: null };
+let asked = 0, local = null;
+const answers = new Map();                                       // id → [the worker's role, its answer's callback]
+function workerFor(role) {
+  if (workers[role] === null) {
+    try {
+      const w = new Worker(new URL("./tribute-worker.js", import.meta.url), { type: "module" });
+      w.onmessage = e => { const [, done] = answers.get(e.data.id) || []; answers.delete(e.data.id); done?.(e.data); };
+      w.onerror = () => {
+        workers[role] = false;
+        for (const [id, [r, done]] of answers) if (r === role) { answers.delete(id); done({ decision: null }); }
+      };
+      workers[role] = w;
+    } catch { workers[role] = false; }
+  }
+  return workers[role];
+}
+/** How strong the computer players are: the room's setting at a table together, so both devices play the same. */
+const strength = () => ramp("tribute", ["easy", "medium", "hard"], { start: OLD_BOTS });
+const skill = () => { const b = together.room ? S?.bots : strength(); return b === "easy" || b === "medium" ? b : "hard"; };
+/** The computer's choice in a seat now: { action, why }; `kind`: "decide", or "hints": the plays weighed, hard's choice
+ *  first, each with what speaks for and against it (tribute-bot.js's weigh). */
+async function think(state, seat, kind = "decide", extra = {}) {
+  state.names = [0, 1, 2, 3].map(s => (s === seat ? "you" : nameOf(s)));   // for the reasons it gives
+  const role = kind === "decide" ? "players" : "coach", worker = workerFor(role);
+  let reply = null;
+  if (worker) reply = await new Promise(res => { const id = ++asked; answers.set(id, [role, res]); worker.postMessage({ id, state, seat, kind, skill: skill(), ...extra }); });
+  if (reply?.decision) return reply.decision;
+  local ||= await import("./tribute-bot.js");
+  if (kind === "hints") return local.hints(state, seat, { search: 12, against: skill() });
+  if (kind === "check") return local.checkMove(state, seat, extra.action, { search: 12, worlds: 40, outBudget: 1500, against: skill() });
+  if (kind === "weigh") return local.weigh(state, seat);
+  if (kind === "playout") return local.playOut(state, seat, extra.actions, { worlds: 40 });
+  return local.decide(state, seat, { skill: skill(), search: skill() === "hard" ? 12 : 0 });
+}
+
+// ---------- the match ----------
+function newMatch() {
+  me = 0;
+  S = { v: 1, names: ["You", BOTS[0], BOTS[1], BOTS[2]], humans: [0], started: Date.now() };
+  G = E.newGame({ mode: opts.mode, deals: opts.deals }, (Math.random() * 2 ** 32) >>> 0);
+  write(MATCH_WORDS, []);
+  closeDialogs();
+  table3d?.deal();
+  afterChange();
+}
+function nextHand() {
+  if (!G || G.phase !== "over") return;
+  if (together.room) { nextTogether(); return; }
+  $("resultDlg").close();
+  if (G.result.over) { newMatch(); return; }
+  keepHand();
+  G = E.nextHand(G, (Math.random() * 2 ** 32) >>> 0);
+  table3d?.deal();
+  afterChange();
+}
+function save() {
+  if (IN_FRAME) return;
+  if (rush) write(RUSH, rush);
+  else if (!together.room) write(RUN, { G, S, C });
+}
+
+// ---------- the turn ----------
+let timer = null, busyWith = null, gen = 0;
+const paused = () => !together.room && isPaused();
+function kick(ms = 0) { clearTimeout(timer); timer = setTimeout(step, ms); }
+function afterChange() {
+  gen++;
+  keepPicked();
+  hint = null;
+  save();
+  render();
+  kick(0);
+}
+/** The cards you've picked, kept as the others play, so you can pick yours while they think (each of their moves used
+ *  to drop them): those still in your hand, none carried into another hand. Your own move takes them (mine). */
+let pickedIn = "";
+function keepPicked() {
+  if (pickedIn !== handId()) { selected.clear(); pickedIn = handId(); return; }
+  const hand = new Set(G?.hands[me] || []);
+  for (const id of selected) if (!hand.has(id)) selected.delete(id);
+}
+/**
+ * At a table together, the device whose player sat down first, of those here, moves the computer players; the others
+ * step in only when a move hasn't come for a few seconds (that page asleep, or gone). Both used to work out every move
+ * and race to save it: twice the work on each phone, and the loser's try thrown away.
+ */
+const BACKUP_MS = 4000;
+const backup = () => !!together.room && runsElsewhere(roomData, together.room.uid);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function step() {
+  timer = null;
+  if (rush) { render(); return; }                               // a puzzle: nobody else moves
+  if (!G || IN_FRAME) return;
+  if (G.phase === "over") { handOver(); return; }
+  const waiting = E.waitingOn(G);
+  advise();
+  const bot = waiting.find(s => !isHuman(s));
+  if (bot === undefined || busyWith !== null || paused()) { render(); return; }
+  const g0 = gen, snap = clone(G), slow = PACE[opts.pace] || PACE.steady;
+  busyWith = bot;
+  render();
+  sleep(backup() ? BACKUP_MS : 0)
+    .then(() => (g0 !== gen ? [null] : Promise.all([think(snap, bot), sleep(slow)])))
+    .then(([d]) => {
+      busyWith = null;
+      if (g0 !== gen || !G || paused()) { render(); kick(0); return; }
+      if (!d?.action) { console.error("no decision", d); render(); return; }
+      apply(bot, d.action);
+    }).catch(e => { busyWith = null; console.error(e); toast("A computer player stumbled"); render(); });
+}
+function apply(seat, act) {
+  if (rush) { if (seat === me) rushAnswer(act); return; }
+  if (together.room) { applyTogether(seat, act); return; }
+  try { E.act(G, seat, act); }
+  catch (e) { console.error(e); toast("That play isn't allowed now"); render(); return; }
+  afterChange();
+}
+
+// ---------- your move ----------
+function playSelected() {
+  if (!G || E.asked(G, me) !== "play") return;
+  const cards = [...selected];
+  if (!cards.length) { toast("Pick the cards to play"); return; }
+  const top = G.top?.reading || null, reading = E.readingFor(cards, G.level, top);
+  if (!reading) {
+    const any = E.classify(cards, G.level)[0];
+    toast(!any ? "Those cards don't make a play" : top ? `${cap(E.playName(any))} doesn't beat ${E.playName(top)}` : "That isn't a play");
+    return;
+  }
+  mine({ t: "play", cards, as: reading });
+}
+function pass() { if (G && E.asked(G, me) === "play" && G.top) mine({ t: "pass" }); }
+function returnSelected() {
+  if (!G || E.asked(G, me) !== "return") return;
+  const ok = E.returnable(G.hands[me], G.level);
+  const pick = [...selected].filter(id => ok.includes(id));
+  if (pick.length !== 1) { toast("Pick one card of 10 or lower to give back"); return; }
+  mine({ t: "return", card: pick[0] });
+}
+/** Your move: noted with the coach's (checked, under Check and Always) from the table as it was, then made. */
+function mine(act) {
+  if (!rush) check(act);
+  selected.clear();
+  apply(me, act);
+}
+// ---------- the coach ----------
+/** The coach's plays for your decision now (hard's choice first), worked out once for the hint and the advice. */
+function plays(auto) {
+  const key = keyNow();
+  if (hint?.key !== key) {
+    const h = { key, list: null, at: 0, auto };
+    h.ready = think(clone(G), me, "hints").then(list => { h.list = Array.isArray(list) ? list : list ? [list] : []; if (hint === h) render(); });
+    hint = h;
+  }
+  return hint;
+}
+/** Hint: the coach's play, its cards picked for you; tapped again, the others it weighed. */
+async function showHint() {
+  if (!G || !E.asked(G, me) || coach() === "off") return;
+  const h = plays(false);
+  sayOff = "";
+  if (h.auto) h.auto = false;                                    // its advice, now taken as a hint: the same play, picked
+  render();
+  await h.ready;
+  const p = hint === h ? h.list?.[h.at] : null;
+  if (!p) return;
+  selected.clear();
+  if (p.action.t === "play") for (const id of p.action.cards) selected.add(id);
+  if (p.action.t === "return") selected.add(p.action.card);
+  render();
+}
+/** Always: the coach's play at each of your decisions, its cards marked, nothing picked. */
+function advise() { if (coach() === "on" && !rush && G && E.asked(G, me)) plays(true); }
+/**
+ * Your move set against the coach's, from the table as it was: under Check and Always, checked (tribute-bot.js's
+ * checkMove, the two tried in deals of the cards you can't see), for its word on it and the hand's review; otherwise
+ * only its pick (the plays weighed, as a hint), silent, for Copy game. Kept in the run with your cards then and where
+ * in the hand's log the move fell, so it's there after a reload; the plays weighed and the table then only in memory.
+ */
+const checked = new WeakMap(), weighed = new WeakMap(), shots = new WeakMap();
+const handId = () => `${S?.started}:${G?.handNo}`;
+function check(act) {
+  const hand = handId(), checking = coach() === "check" || coach() === "on", snap = clone(G);
+  const note = { hand, mine: act, done: false, differs: false, words: "", gap: null, more: 0, checked: checking, at: G.log.length, cards: G.hands[me].slice(), top: G.top?.reading || null, best: null };
+  if (C[0]?.hand !== hand) C = [];
+  C.push(note);
+  shots.set(note, snap);
+  think(clone(snap), me, checking ? "check" : "hints", { action: act }).then(c => {
+    note.done = true;
+    if (checking && c) {
+      note.best = c.best.action;
+      note.differs = !!c.differs;
+      if (c.differs) Object.assign(note, { words: c.words, gap: c.sure ? c.gap : null, more: c.more });
+      checked.set(note, c);
+    } else if (c) {
+      const list = Array.isArray(c) ? c : [c];
+      note.best = list[0]?.action || null;
+      weighed.set(note, list);
+    }
+    if (C.includes(note)) { save(); render(); }
+  });
+}
+/** The coach's word on your last move it would have made otherwise, until a move of yours it agrees with. */
+function verdict() {
+  if ((coach() !== "check" && coach() !== "on") || rush) return null;
+  for (let i = C.length - 1; i >= 0; i--) {
+    if (C[i].hand !== handId() || C[i].checked === false) return null;
+    if (C[i].differs) return C[i];
+    if (C[i].done) return null;
+  }
+  return null;
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const mid = s => s.charAt(0).toLowerCase() + s.slice(1);  // "Beat it with a pair of As" mid-sentence, its ranks kept
+// ---------- the coach's plan: what your cards make after a play ----------
+// "Plays to go out after it" is the coach's own measure of a play: the rest of your hand split, in a vacuum, into the
+// plays that cost it fewest leads (tribute-bot.js's split, the same the hint reckons by). Seeing the split is seeing
+// why it breaks a strong combination: the rest may then go out in fewer plays, or the combination may cost more leads
+// kept than broken.
+/** A group's cards as they read down a column: the most of a rank first (a full house's three, then its two), low to
+ *  high, the wilds last. */
+function ordered(cards, level) {
+  const rank = id => (E.isWild(id, level) ? -1 : E.rankOf(id)), n = new Map();
+  for (const id of cards) n.set(rank(id), (n.get(rank(id)) || 0) + 1);
+  return [...cards].sort((a, b) => (rank(a) === -1) - (rank(b) === -1) || n.get(rank(b)) - n.get(rank(a)) || E.valueOf(a, level) - E.valueOf(b, level) || E.suitOf(a) - E.suitOf(b));
+}
+/** A hand split into the coach's plays, the strongest first: the bombs by power, then by their top card. */
+function planOf(hand, level) {
+  if (!hand.length) return [];
+  const top = c => Math.max(...c.cards.map(id => E.valueOf(id, level)));
+  return split(hand, level).combos.map(c => ({ cards: ordered(c.cards, level), reading: c.reading }))
+    .sort((a, b) => E.power(b.reading) - E.power(a.reading) || top(b) - top(a));
+}
+/** What a move takes from the hand: a play's cards, a returned card, nothing for a pass. */
+const cardsOf = a => (a.t === "play" ? a.cards : a.t === "return" ? [a.card] : []);
+/** The coach's plan after a move: its cards, then the plays it counts on from the rest of the hand. */
+function planAfter(action, hand, level) {
+  const cards = cardsOf(action);
+  return { cards: ordered(cards, level), groups: planOf(hand.filter(id => !cards.includes(id)), level) };
+}
+/** The hint's plan while it stands (asked for, not the coach's unasked advice, its play still the cards picked): your
+ *  cards are set out as columns of it, the play first. */
+function planView() {
+  const now = hint?.key === keyNow() && !hint.auto ? hint : null, h = now?.list?.[now.at];
+  if (!h || rush || !G) return null;
+  const cards = cardsOf(h.action);
+  if (selected.size !== cards.length || cards.some(id => !selected.has(id))) return null;
+  return planAfter(h.action, G.hands[me], G.level);
+}
+/** A plan in small cards, each play apart: for the Why? sheet. */
+const planRow = (groups, level) => `<span class="tb-plan-row">${groups.map(g => mini(g.cards, level, "tb-plan-g")).join("")}</span>`;
+
+/** The plays the hint weighed (or a puzzle's), side by side: each one's numbers, what speaks for it and against it,
+ *  and what your hand makes after it; Pick takes its cards (not in a puzzle, once answered). `hand`: your cards as
+ *  they were when the plays were weighed (a check's are those before your move). */
+function showWhy(list = hint?.key === keyNow() ? hint.list : null, hand = G?.hands[me]) {
+  if (!list?.length) return;
+  const mineIn = list.some(o => o.yours), picks = !rush && !mineIn;    // a puzzle's or a check's: your move's made
+  const pctOf = x => `${Math.round(x * 100)}%`;
+  const looked = list.some(o => o.levels != null), level = G.level;
+  let html = `${list[0].why ? `<p class="tb-why-lead">${esc(list[0].why)}</p>` : ""}${list[0].out ? `<p class="tb-why-out">${esc(list[0].out)}</p>` : ""}`;
+  if (hand?.length) html += `<div class="tb-plan-now"><span>Your hand as it stands, as the coach splits it:</span>${planRow(planOf(hand, level), level)}</div>`;
+  html += `<ol class="tb-opts">`;
+  list.forEach((o, i) => {
+    const stats = [];
+    if (o.plays != null) stats.push(o.plays ? `${o.plays} play${o.plays === 1 ? "" : "s"} to go out after it` : "out");
+    if (o.holds != null && o.plays) stats.push(`holds ${pctOf(o.holds)}`);
+    if (o.levels != null) stats.push(`${o.levels >= 0 ? "+" : "−"}${Math.abs(o.levels).toFixed(1)} levels`);
+    const pc = [...o.pros.map(x => `<li class="pro">${esc(cap(x))}</li>`), ...o.cons.map(x => `<li class="con">${esc(cap(x))}</li>`)].join("");
+    const tag = o.yours ? '<span class="tb-yours">yours</span>' : "";
+    const after = hand?.length ? planAfter(o.action, hand, level).groups : null;
+    const then = after ? `<div class="tb-plan-then"><span>${after.length ? "Then:" : "Then: out"}</span>${after.length ? planRow(after, level) : ""}</div>` : "";
+    html += `<li class="tb-opt${i === 0 ? " best" : ""}${o.yours && i ? " missed" : ""}"><div class="tb-opt-head"><b>${esc(o.title)}</b>${tag}<span class="tb-stat">${stats.join(" · ")}</span>${o.action.t === "pass" || !picks ? "" : `<button type="button" class="link" data-pick="${i}">Pick</button>`}</div>${then}${pc ? `<ul class="tb-pc">${pc}</ul>` : ""}</li>`;
+  });
+  html += `</ol><p class="tb-why-note">${rush ? "The best play first." : mineIn ? "The coach's choice first, then yours." : "The computer's choice is first."} Plays to go out: what your hand needs after it, split as the computer would, shown under each (Then). Holds: the chance no opponent beats it except with a bomb, from every card played, what the tribute showed (a card paid or given back is with the player who got it; a payer holds nothing above the card he paid) and how often the computer's players beat a play like it.${looked ? ` Levels: the rest of the hand played out in ${rush ? `${rushPuzzle()?.n || "hundreds of"} deals` : "deals"} of the cards you can't see, fitted to what's been played, and what that did to your side's levels on average.` : ""}</p>`;
+  $("whyBody").innerHTML = html;
+  $("whyDlg").showModal();
+  $("whyDlg").scrollTop = 0;
+}
+$("whyBody").addEventListener("click", e => {
+  const b = e.target.closest("[data-pick]");
+  if (!b || !hint?.list) return;
+  hint.at = Number(b.dataset.pick);
+  const h = hint.list[hint.at];
+  selected.clear();
+  if (h.action.t === "play") for (const id of h.action.cards) selected.add(id);
+  if (h.action.t === "return") selected.add(h.action.card);
+  $("whyDlg").close();
+  render();
+});
+
+// ---------- the table ----------
+const pos = seat => ["me", "right", "top", "left"][(seat - me + 4) % 4];
+/** A card as an element's inner markup: its rank and suit in the corner (the jokers lettered down the side). */
+function face(id, level) {
+  if (E.isJoker(id)) return `<span class="r">J<br>O<br>K<br>E<br>R</span>`;
+  const r = E.rankOf(id), s = E.suitOf(id);
+  return `<span class="r">${FACE(r)}</span><span class="s">${E.SUITS[s]}</span>${E.isWild(id, level) ? '<span class="w" aria-hidden="true">★</span>' : ""}`;
+}
+const cardClass = (id, level) => {
+  const c = ["tb-card"];
+  if (E.isJoker(id)) c.push("joker", E.rankOf(id) === E.BJ ? "big" : "small");
+  else { if (E.suitOf(id) % 2 === 1) c.push("red"); if (E.rankOf(id) === level) c.push(E.isWild(id, level) ? "wild" : "level"); }
+  return c.join(" ");
+};
+const mini = (ids, level, cls = "") => `<span class="tb-cards ${cls}">${ids.map(id => `<span class="${cardClass(id, level)}" aria-label="${E.cardName(id)}">${face(id, level)}</span>`).join("")}</span>`;
+/** What each seat has done in the trick under way: its play, or a pass. */
+function trickActs() {
+  const acts = {};
+  for (let i = G.log.length - 1; i >= 0; i--) {
+    const e = G.log[i];
+    if (e.e === "trick" || e.e === "lead" || e.e === "return" || e.e === "tribute" || e.e === "resist" || e.e === "no-tribute") break;
+    if ((e.e === "play" || e.e === "pass") && !(e.seat in acts)) acts[e.seat] = e;
+  }
+  return acts;
+}
+function drawSeats() {
+  const acts = trickActs(), lvl = G.level;
+  for (let seat = 0; seat < 4; seat++) {
+    const box = $(`seat${(seat - me + 4) % 4}`);
+    const n = G.hands[seat].length, place = G.out.indexOf(seat);
+    const turn = (G.phase === "play" && G.turn === seat) || busyWith === seat || (G.phase === "return" && E.waitingOn(G).includes(seat));
+    const a = acts[seat];
+    const isTop = G.top && G.top.seat === seat && a?.e === "play";
+    const mate = E.teamOf(seat) === E.teamOf(me);
+    let html = `<div class="tb-who${turn ? " on" : ""}${mate ? " mate" : ""}"><b>${esc(nameOf(seat))}</b>`;
+    if (seat !== me) html += place >= 0 ? `<span class="tb-place">${["1st", "2nd", "3rd"][place]}</span>` : `<span class="tb-n" aria-label="${n} cards">${n}</span>`;
+    else if (place >= 0) html += `<span class="tb-place">${["1st", "2nd", "3rd"][place]}</span>`;
+    if (turn && seat !== me) html += '<span class="tb-dots" aria-hidden="true">…</span>';
+    html += "</div>";
+    if (a?.e === "play") html += `<div class="tb-play${isTop ? " best" : ""}">${mini(a.cards, lvl)}</div>`;
+    else if (a?.e === "pass") html += '<div class="tb-play pass">Pass</div>';
+    else html += '<div class="tb-play none"></div>';
+    box.innerHTML = html;
+  }
+}
+function drawStrip() {
+  const us = E.teamOf(me), lv = G.levels, r = G.level;
+  const decl = G.declarer < 0 ? "" : G.declarer === us ? " (yours)" : " (theirs)";
+  if (in3d()) {                                                  // the brass plate: the level, its wild card, both sides' levels
+    const tail = rush ? rushStatus() : `<span class="t3-hno">${G.opts.mode === "deals" ? `Hand ${G.handNo + 1} of ${G.opts.deals}` : "To the ace"}</span>`;
+    $("strip").innerHTML = levelHtml({ level: r, levels: lv, us, declarer: G.declarer, tail, cardClass });
+    return;
+  }
+  if (rush) { $("strip").innerHTML = `<span class="tb-lvl">Level <b>${FACE(r)}</b>${decl} · <span class="tb-wild">♥${FACE(r)}</span> wild</span>${rushStatus()}`; return; }
+  const left = G.opts.mode === "deals" ? `hand ${G.handNo + 1} of ${G.opts.deals}` : "to the ace";
+  $("strip").innerHTML = `<span class="tb-lvl">Level <b>${FACE(r === 15 ? 15 : r)}</b>${decl} · <span class="tb-wild">♥${FACE(r)}</span> wild</span><span class="tb-score">Us <b>${FACE(lv[us])}</b> · them <b>${FACE(lv[1 - us])}</b> · ${left}</span>`;
+}
+/** The news at a hand's start: who led, who paid tribute and what came back. */
+function newsLines() {
+  const lines = [];
+  for (const e of G.log) {
+    if (e.e === "lead") lines.push(`${who(e.seat)} ${e.seat === me ? "hold" : "holds"} the turned-up ${E.cardName(e.card)}, and ${e.seat === me ? "lead" : "leads"}.`);
+    else if (e.e === "resist") lines.push(`${e.seats.map(who).join(" and ")} ${e.seats.length > 1 || e.seats[0] === me ? "hold" : "holds"} both big jokers: no tribute.`);
+    else if (e.e === "tribute") lines.push(`${who(e.from)} ${e.from === me ? "pay" : "pays"} ${e.to === me ? "you" : nameOf(e.to)} ${E.isJoker(e.card) ? "the " : ""}${E.cardName(e.card)}.`);
+    else if (e.e === "return") lines.push(`${who(e.from)} ${e.from === me ? "give" : "gives"} back ${E.cardName(e.card)}.`);
+  }
+  return lines;
+}
+function drawNews() {
+  const box = $("news"), lines = newsLines();
+  const playing = G.log.some(e => e.e === "play" || e.e === "pass");
+  box.hidden = !lines.length || playing;
+  box.innerHTML = lines.map(l => `<p>${esc(l)}</p>`).join("");
+}
+
+// ---------- your cards: in columns by rank, the strongest on the left ----------
+function columns(hand, level) {
+  const cols = new Map();
+  for (const id of hand) {
+    const v = E.isWild(id, level) ? 15.5 : E.valueOf(id, level);
+    if (!cols.has(v)) cols.set(v, []);
+    cols.get(v).push(id);
+  }
+  return [...cols.entries()].sort((a, b) => b[0] - a[0]).map(([v, ids]) => ids.sort((a, b) => E.suitOf(a) - E.suitOf(b)));
+}
+/** Upright, or a tablet's height: a column to a rank, its cards each showing at least their corner. A tablet held
+ *  sideways draws them larger, with the width to spare; a phone held sideways (stacked, by choice) at a phone's size. */
+function stacked(cols, rem, room) {
+  const big = sideways() && !low(), tiny = sideways() && low(), W = (big ? 3.2 : tiny ? 2.3 : 2.6) * rem, H = (big ? 4.4 : tiny ? 3.2 : 3.6) * rem;   // (tiny: a phone on its side, stacked: the table needs the height)
+  const pitch = cols.length > 1 ? Math.min(W + 0.2 * rem, (room - W) / (cols.length - 1)) : W;
+  const deepest = Math.max(1, ...cols.map(c => c.length));
+  // each card behind another shows its whole corner, the rank and the suit under it: with the rank alone, a straight
+  // flush (five ranks in a row in one suit) couldn't be seen in the hand. A deep column (five or more of a rank) has
+  // its corners drawn smaller (tight), so it doesn't take the table's room.
+  // Korbi, 7 Nov 2026: the table's size must not change as the cards are rearranged (a rank's stack growing from four to five). The hand
+  // always takes the room of its deepest possible stack, and a deeper column has its corners drawn closer to fit it.
+  // Korbi, 8 Nov 2026: a phone on its side stacks closer (a corner is still rank and suit) and the cards stand on the screen's bottom edge.
+  const index = (tiny ? 1.5 : 2.1) * rem, reach = (tiny ? 3.8 : 7.2) * rem;
+  const drop = deepest > 1 ? Math.min(index, Math.max((tiny ? 0.7 : 0.9) * rem, reach / (deepest - 1))) : 0, tight = deepest > 1 && drop < index;
+  const x0 = Math.max(0, (room - (cols.length ? (cols.length - 1) * pitch + W : 0)) / 2);
+  const at = [];
+  const y0 = tiny ? reach - (deepest - 1) * drop : 0;            // on its side the hand sits on the foot of its room, whatever the deepest stack
+  cols.forEach((col, c) => col.forEach((id, i) => at.push({ id, x: x0 + c * pitch, y: y0 + i * drop, z: i + 1 })));
+  return { W, H, at, tight, height: H + reach + (tiny ? 0 : 0.3 * rem) };
+}
+/** Held sideways, in a row (a phone's way, by choice a tablet's): the hand fanned along the table's edge, each card
+ *  showing its corner, a little more room between ranks than within one, as a hand is held. On a phone, larger in full
+ *  screen, where the row has the whole width; on a tablet as large as its stacked cards. */
+function fanned(cols, rem, room) {
+  const big = !low() ? 1.4 : opts.full ? 1.1 : 1, W = 2.25 * big * rem, H = 3.2 * big * rem;
+  const n = cols.reduce((s, c) => s + c.length, 0), breaks = Math.max(0, cols.length - 1);
+  const least = 1.05 * rem;                                     // a corner, still readable and still a target
+  let gap = 0.22 * rem, pitch = n > 1 ? (room - W - breaks * gap) / (n - 1) : 0;
+  if (pitch < least && n > 1) { gap = breaks ? Math.max(0, (room - W - (n - 1) * least) / breaks) : 0; pitch = Math.max((room - W - breaks * gap) / (n - 1), 0.6 * rem); }
+  pitch = Math.min(pitch, W * 0.66);
+  const x0 = Math.max(0, (room - W - (n - 1) * pitch - breaks * gap) / 2), at = [];
+  let k = 0;
+  cols.forEach((col, c) => col.forEach(id => { at.push({ id, x: x0 + k * pitch + c * gap, y: 0, z: k + 1 }); k++; }));
+  return { W, H, at, height: H };
+}
+let handH = 0;                                                   // your cards' height as last laid out, for the plays'
+function drawHand() {
+  const box = $("hand");
+  // while a hint stands, its plan: the play first, then each play of the rest a column (in a row, a group), every
+  // other one shaded; else a column to a rank
+  const hand = G.hands[me], level = G.level, plan = planView();
+  const cols = plan ? [plan.cards, ...plan.groups.map(g => g.cards)].filter(c => c.length) : columns(hand, level);
+  const shade = new Set(plan ? plan.groups.filter((g, i) => i % 2 === 1).flatMap(g => g.cards) : []);
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const fan = sideways() && sideOf() === "row";
+  const lay = fan ? fanned(cols, rem, box.clientWidth || 480) : stacked(cols, rem, box.clientWidth || 360);
+  handH = lay.H;
+  box.classList.toggle("fan", fan);
+  $("app").classList.toggle("fanned", fan);                      // full screen on a phone: a row goes under the console too
+  // on the page, so the table can leave room for the cards at its foot when they lie on it (a phone on its side)
+  $("app").style.setProperty("--tb-cw", `${lay.W}px`); $("app").style.setProperty("--tb-ch", `${lay.H}px`); $("app").style.setProperty("--tb-hh", `${lay.height}px`);
+  const ask = E.asked(G, me), ok = ask === "return" ? new Set(E.returnable(hand, level)) : null;
+  // the coach's play, marked while it's advice (Always), until a Hint picks it
+  const adv = hint?.auto && hint.key === keyNow() ? hint.list?.[0]?.action : null;
+  const advised = new Set(adv?.t === "play" ? adv.cards : adv?.t === "return" ? [adv.card] : []);
+  let html = "";
+  const three = in3d(), room = box.clientWidth || 360, tilt = fan ? 6 : 4, drop = (fan ? 0.9 : 0.55) * rem;
+  lay.at.forEach(({ id, x, y, z }, i) => {
+    const cls = [cardClass(id, level)];
+    if (three) cls.push("t3f");
+    if (three && (fan ? i === lay.at.length - 1 : lay.at[i + 1]?.x !== x)) cls.push("last");   // the card in front: its middle shows
+    // 3D: the hand is a fan, each card (a column's, stacked) turned a little more the further from the middle, the ends lower
+    const t = three ? (x + lay.W / 2 - room / 2) / (room / 2) : 0, arc = three ? `;--rot:${(t * tilt).toFixed(2)}deg;--ly:${(t * t * drop).toFixed(1)}px` : "";
+    if (selected.has(id)) cls.push("sel");
+    if (advised.has(id)) cls.push("advised");
+    if (shade.has(id)) cls.push("alt");
+    if (ok && !ok.has(id)) cls.push("dim");
+    html += `<button type="button" class="${cls.join(" ")}" data-id="${id}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;z-index:${z}${arc}" aria-label="${E.cardName(id)}${selected.has(id) ? ", picked" : ""}">${three ? cardFace(id, level) : face(id, level)}</button>`;
+  });
+  box.innerHTML = html;
+  // 3D: the picked cards glow green when they make a play that may be made now, ink-red when they don't
+  const made = three && ask === "play" && selected.size ? E.readingFor([...selected], level, G.top?.reading || null) : null;
+  box.classList.toggle("ok", !!made);
+  box.classList.toggle("bad", three && ask === "play" && selected.size > 0 && !made);
+  box.classList.toggle("tight", !!lay.tight);
+  box.classList.toggle("plan", !!plan);
+  box.style.height = `${lay.height.toFixed(0)}px`;
+}
+// Tap a card to pick it or put it back; drag across your cards, along the row or down a column, to pick (or put back,
+// as the first card went) every one you pass. A return takes one card: the last you touch.
+let drag = null;                                                 // { pick: picking or putting back, done: ids this drag }
+function touch(b) {
+  const id = Number(b.dataset.id);
+  if (drag.done.has(id)) return;
+  drag.done.add(id);
+  if (E.asked(G, me) === "return") { selected.clear(); selected.add(id); }
+  else if (drag.pick) selected.add(id);
+  else selected.delete(id);
+  render();
+}
+const startDrag = b => { drag = { pick: !selected.has(Number(b.dataset.id)), done: new Set() }; touch(b); };
+$("hand").addEventListener("pointerdown", e => {
+  const b = e.target.closest(".tb-card");
+  if (!b || !G || e.button > 0) return;
+  $("hand").setPointerCapture(e.pointerId);                     // the drag stays the hand's as its cards are redrawn
+  startDrag(b);
+});
+$("hand").addEventListener("pointermove", e => {
+  const b = drag && document.elementFromPoint(e.clientX, e.clientY)?.closest("#hand .tb-card");
+  if (b) touch(b);
+});
+for (const end of ["pointerup", "pointercancel"]) $("hand").addEventListener(end, () => { drag = null; });
+// a card picked from the keyboard (Enter, Space): a pointer's tap is the pointerdown above, so its click is passed over
+$("hand").addEventListener("click", e => {
+  const b = !e.detail && e.target.closest(".tb-card");
+  if (!b || !G) return;
+  startDrag(b);
+  drag = null;
+});
+
+// ---------- the buttons ----------
+let sayOff = "";                                                 // the coach's word (its signature) the player dismissed
+$("say").addEventListener("click", e => { if (e.target.closest(".tb-say-x")) { sayOff = $("say").dataset.sig || ""; $("say").hidden = true; } });
+function drawActions() {
+  const box = $("actions"), say = $("say");
+  box.replaceChildren();
+  say.classList.remove("kept", "bubble");
+  if (rush) { drawRush(box, say); return; }
+  // Korbi, 7 Nov 2026: the coach's word is a speech bubble over the screen, partly see-through and dismissable; it takes no room, so
+  // the wireframe is the same whether it speaks or not (the room the unasked coach used to keep is gone with it)
+  say.classList.add("bubble");
+  const now0 = hint?.key === keyNow() ? hint : null, last0 = verdict();
+  const sig = now0 ? `h:${now0.key}:${now0.at}:${now0.list ? 1 : 0}` : last0 ? `v:${last0.words}` : "";
+  const dismissed = !!sig && sig === sayOff;
+  const now = dismissed ? null : now0, h = now?.list?.[now.at], last = dismissed ? null : last0;
+  say.dataset.sig = sig;
+  say.hidden = !(now || last);
+  if (now) {
+    const n = now.list?.length || 0, label = now.auto ? "Coach" : "Hint";
+    const plan = planView(), k = plan?.groups.length, plays = `${k === 1 ? "one play" : `${k} plays`} to go out`;
+    const laid = !plan ? "" : ` <span class="tb-plan-note">Your cards as it plans them: ${plan.cards.length ? `this, then ${k ? plays : "out"}` : plays}.</span>`;
+    say.innerHTML = !h ? `<b>${label}</b> <span class="tb-thinking">thinking…</span>`
+      : `<b>${label}</b> ${esc(h.why.replace(/ Next best:.*$/s, ""))}${laid}${h.pros ? ' <button type="button" class="link tb-why-btn">Why?</button>' : ""}`;
+    say.querySelector(".tb-why-btn")?.addEventListener("click", () => showWhy());   // not the click itself as the list
+  } else if (last) {
+    const c = checked.get(last);
+    say.innerHTML = `<b class="tb-miss">Coach</b> ${esc(last.words)}${c ? ' <button type="button" class="link tb-why-btn">Why?</button>' : ""}`;
+    // the sheet leads with the verdict: its numbers are the check's deals, not the ones the coach decided in
+    say.querySelector(".tb-why-btn")?.addEventListener("click", () => showWhy([{ ...c.list[0], why: last.words }, ...c.list.slice(1)], last.cards));
+  } else say.replaceChildren();
+  if (!say.hidden) say.insertAdjacentHTML("beforeend", '<button type="button" class="tb-say-x" aria-label="Dismiss">×</button>');
+  if (G.phase === "over") { box.append(goBtn(G.result.over ? "The final score" : "Next hand", () => showResult(), "primary")); return; }
+  const ask = E.asked(G, me);
+  if (!ask) {
+    const who = busyWith ?? E.waitingOn(G)[0];
+    const p = document.createElement("p");
+    p.className = "tb-wait";
+    p.textContent = paused() ? "Paused" : who !== undefined && who >= 0 ? `${nameOf(who)} to ${G.phase === "return" ? "give a card back" : "play"}…` : "";
+    box.append(p);
+    return;
+  }
+  if (coach() !== "off") box.append(goBtn("Hint", showHint, "quiet"));
+  if (ask === "return") {
+    const to = G.tribute.returns.find(r => r.from === me && r.card === null)?.to;
+    const p = document.createElement("p");
+    p.className = "tb-wait";
+    p.textContent = `Give ${nameOf(to)} a card back: 10 or lower.`;
+    box.prepend(p);
+    box.append(goBtn("Give back", returnSelected, "primary"));
+    return;
+  }
+  moveButtons(box);
+}
+/** Pass (when there's a play to answer), Clear, and the play your picked cards make. */
+function moveButtons(box) {
+  if (G.top) box.append(goBtn("Pass", pass, ""));
+  if (selected.size) {
+    const clear = goBtn("", () => { selected.clear(); render(); }, "quiet tb-clear");
+    clear.innerHTML = '<span class="long">Clear</span><span class="short" aria-hidden="true">×</span>';
+    clear.setAttribute("aria-label", "Clear");
+    box.append(clear);
+  }
+  const top = G.top?.reading || null, reading = selected.size ? E.readingFor([...selected], G.level, top) : null;
+  const play = goBtn(reading ? `Play ${E.playName(reading).replace(/^an? /, "")}` : G.top ? "Beat it" : "Lead", playSelected, "primary");
+  play.disabled = !reading;
+  box.append(play);
+  if (play.scrollWidth > play.clientWidth + 1) play.classList.add("two");   // its name in two lines, in the row's height
+}
+function goBtn(text, fn, kind = "") {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `tb-go${kind ? ` ${kind}` : ""}`;
+  b.textContent = text;
+  b.addEventListener("click", fn);
+  return b;
+}
+
+// ---------- the card counter: what's still out there, from what you've seen ----------
+function drawCounter() {
+  const box = $("counter");
+  box.hidden = !(counting() || rush) || !G;
+  if (box.hidden) return;
+  const seen = new Set(G.hands[me]);
+  for (const p of G.played) for (const id of p) seen.add(id);
+  const left = {};
+  for (let id = 0; id < 108; id++) if (!seen.has(id)) { const v = E.isWild(id, G.level) ? "★" : FACE(E.valueOf(id, G.level)) || (E.rankOf(id) === E.BJ ? "BJ" : "SJ"); left[v] = (left[v] || 0) + 1; }
+  const order = ["BJ", "SJ", "★", "lvl", "A", "K", "Q", "J", "10", "9", "8", "7", "6", "5", "4", "3", "2"];
+  box.innerHTML = order.filter(v => v !== FACE(G.level)).map(v => `<span class="${left[v] ? "" : "gone"}"><b>${v === "lvl" ? FACE(G.level) : v}</b>${left[v] || 0}</span>`).join("");
+}
+
+// ---------- the end of a hand ----------
+let shownFor = null;
+function handOver() {
+  render();
+  const id = `${S?.started}:${G.handNo}`;
+  if (shownFor === id) return;
+  shownFor = id;
+  record();
+  setTimeout(() => { if (G?.phase === "over" && !$("resultDlg").open) showResult(); }, 700);
+  roundOver("tribute");
+}
+function record() {
+  if (together.room || IN_FRAME || !G?.result) return;
+  const r = G.result, us = E.teamOf(me);
+  const st = read(STATS, { hands: 0, firsts: 0, oneTwo: 0, matches: 0, wins: 0 });
+  st.hands++;
+  if (r.team === us) { st.firsts++; if (r.gain === 3) st.oneTwo++; }
+  if (r.over) { st.matches++; if (r.winner === us) st.wins++; noteStreak("tribute", r.winner === us); strength(); r.winner === us ? ramp.won(true) : ramp.lost(); }
+  write(STATS, st);
+  save();
+}
+function showResult() {
+  if (!G?.result) return;
+  const r = G.result, us = E.teamOf(me), ours = r.team === us;
+  const order = r.order.map((s, i) => `<li${E.teamOf(s) === us ? ' class="us"' : ""}><span>${["1st", "2nd", "3rd", "4th"][i]}</span> ${esc(nameOf(s))}</li>`).join("");
+  const how = r.gain === 3 ? "first and second" : r.gain === 2 ? "first and third" : "first and last";
+  $("resultHead").textContent = ours ? `Your side goes out ${how}` : `They go out ${how}`;
+  let html = `<ol class="tb-order">${r.gain === 3 ? r.order.slice(0, 2).map((s, i) => `<li${E.teamOf(s) === us ? ' class="us"' : ""}><span>${["1st", "2nd"][i]}</span> ${esc(nameOf(s))}</li>`).join("") : order}</ol>`;
+  html += `<p class="tb-gain">${ours ? "You rise" : "They rise"} ${r.gain} level${r.gain > 1 ? "s" : ""}, to ${FACE(r.levels[r.team])}.${r.passedA ? " That passes the ace." : ""}</p>`;
+  html += `<p class="tb-levels">Us <b>${FACE(r.levels[us])}</b> · them <b>${FACE(r.levels[1 - us])}</b></p>`;
+  if (r.over) html += `<p class="tb-final">${r.winner === us ? "You win the match." : "They win the match."}</p>`;
+  else html += `<p class="tb-next">The next hand is played at ${ours ? "your" : "their"} level, ${FACE(r.levels[r.team])}${r.gain === 3 ? "; both of the other side pay tribute" : "; the last out pays tribute"}.</p>`;
+  html += review();
+  $("resultBody").innerHTML = html;
+  $("nextBtn").textContent = r.over ? "New match" : "Next hand";
+  const dlg = $("resultDlg");
+  dlg.showModal();
+  dlg.scrollTop = 0;
+  $("nextBtn").focus({ preventScroll: true });
+}
+
+/** The coach's review of your hand (check, always): how often it would have played as you did, and the moves where it
+ *  wouldn't that cost most, in its words. */
+function review() {
+  const notes = C.filter(n => n.hand === handId() && n.done && n.checked !== false);
+  if (!notes.length || (coach() !== "check" && coach() !== "on")) return "";
+  const differs = notes.filter(n => n.differs), worst = differs.slice().sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0) || b.more - a.more).slice(0, 3);
+  let html = `<h3 class="tb-sub">Your play</h3><p class="tb-review-lead">You and the coach agreed on ${notes.length - differs.length} of ${notes.length} move${notes.length === 1 ? "" : "s"}${differs.length > worst.length ? `; the ${worst.length} that cost most:` : "."}</p>`;
+  if (worst.length) html += `<ul class="tb-review">${worst.map(n => `<li>${esc(n.words)}</li>`).join("")}</ul>`;
+  return html;
+}
+
+// ---------- full screen ----------
+/**
+ * Full screen (Menu): the header's buttons go onto the table, at its top right, and the levels at its top left, in a
+ * band along its top; on a phone held sideways the console lies on the cloth too, above your cards, which take the
+ * whole width. Where the browser can, the page goes full screen as well (an app on the home screen already is).
+ */
+function placeFull() {
+  const app = $("app"), table = $("table"), top = document.querySelector("header.top"), strip = $("strip"), on = !!opts.full;
+  app.classList.toggle("ontable", on);   // the table-filling mode, the Full screen choice in the menu (not the shared frame, #app.full)
+  if (on) {
+    if (top.parentElement !== table) table.append(top);
+    if (low() ? strip.parentElement !== app : strip.parentElement !== table) (low() ? table.before(strip) : table.append(strip));
+  } else if (top.parentElement !== app) { app.prepend(top); top.after(strip); }
+}
+function fullScreen(on) {
+  try {
+    if (on && document.fullscreenEnabled && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  } catch { /* a browser without it: the layout alone */ }
+}
+
+function render() {
+  placeFull();
+  if (!G) return;
+  const three = in3d(), was = three ? table3d.before() : null;   // the cards' places before they're drawn again, for their flights
+  drawStrip();
+  if (!three) { drawSeats(); drawNews(); }
+  drawCounter();
+  drawHand();
+  drawActions();
+  drawPartner();
+  if (three) table3d.draw(was); else fitPlays();
+  flashGo();
+}
+/** Your go: the table flashes green as a decision comes to you, and fades; once a decision, not at every redraw. */
+let flashed = "";
+function flashGo() {
+  const go = !rush && !IN_FRAME && G.phase !== "over" && !paused() && E.asked(G, me) ? keyNow() : "";
+  if (!go || go === flashed) return;
+  flashed = go;
+  const t = $("table");
+  t.classList.remove("go");
+  void t.offsetWidth;                                            // the animation starts again, even mid-fade
+  t.classList.add("go");
+}
+
+$("table").addEventListener("animationend", e => { if (e.animationName === "tb-go" || e.animationName === "t3-go" || e.animationName === "tk-go") $("table").classList.remove("go"); });
+
+// ---------- the plays on the table: as large as your cards, larger where the table has the room ----------
+/**
+ * The size the plays' cards are drawn at (--tb-pf, the font their cards are measured in): three rows of plays in the
+ * table's height, its names and gaps taken out; a play of six cards, each showing its corner, in half its width (the
+ * two at the sides share a row); and at most a quarter larger than your own cards. A short table (a small phone, the
+ * counter on, the coach's room kept) puts your partner's name and yours beside your plays (flat), not over and under
+ * them, where that keeps the plays nearer their size. Worked out when a hand first shows and kept, so the plays don't
+ * grow as your hand shrinks and the table with it; made smaller only if the table must (a hint's words taking its
+ * room). A row too long even so (a bomb of eight) draws its cards closer.
+ */
+const PLAY = { w: 2.74, h: 3.79, step: 1.5 };                    // a play's card and the corner it shows, in its em
+let fit = { key: "", pf: 0, flat: false };
+function fitPlays() {
+  const t = $("table"), cs = getComputedStyle(t), px = v => parseFloat(v) || 0;
+  const w = t.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight), h = t.clientHeight - px(cs.paddingTop) - px(cs.paddingBottom);
+  if (w <= 0 || h <= 0) return;                                  // not laid out (a frame's first moment): nothing to fit
+  const rem = px(getComputedStyle(document.documentElement).fontSize) || 16;
+  const name = (t.querySelector(".tb-who")?.offsetHeight || 1.4 * rem) + px(getComputedStyle($("seat0")).rowGap);
+  const half = w / 2 - .2 * rem;                                 // .tb-left and .tb-right: up to half, less a gap
+  const most = Math.min(half / (PLAY.w + 5 * PLAY.step), (handH || 3.6 * rem) * 1.25 / PLAY.h), rows = h - 2 * px(cs.rowGap);
+  const tall = Math.min(most, (rows - 3 * name) / 3 / PLAY.h), flat = Math.min(most, (rows - name) / 3 / PLAY.h);
+  const key = `${rush ? `rush:${here()}` : `${S?.started}:${G.handNo}`}@${innerWidth}x${innerHeight}`;
+  if (key !== fit.key) fit = { key, flat: tall < .9 * most, pf: 0 };
+  fit.pf = Math.max(6, fit.pf ? Math.min(fit.pf, fit.flat ? flat : tall) : fit.flat ? flat : tall);
+  t.classList.toggle("flat", fit.flat);
+  t.style.setProperty("--tb-pf", `${fit.pf.toFixed(2)}px`);
+  // flat, the plays across and yours keep clear of the names at their left: as far again on the right, so they centre
+  const named = fit.flat ? 2 * (Math.max(...["seat2", "seat0"].map(id => $(id).querySelector(".tb-who")?.offsetWidth || 0)) + .4 * rem) : 0;
+  for (const row of t.querySelectorAll(".tb-cards")) {
+    const n = row.children.length, room = row.closest(".tb-left, .tb-right") ? half : w - named;
+    if (n > 1 && fit.pf * (PLAY.w + (n - 1) * PLAY.step) > room) row.style.setProperty("--tb-step", `${Math.max(.6 * fit.pf, (room - PLAY.w * fit.pf) / (n - 1)).toFixed(2)}px`);
+  }
+}
+function closeDialogs() { for (const id of ["resultDlg", "whyDlg", "rushDlg", "copyDlg"]) if ($(id).open) $(id).close(); }
+
+// ---------- puzzle rush ----------
+// Positions from the computer players' own hands where one play is clearly best (tribute-rush.js; the bank,
+// tribute-puzzles.js, loads with the first rush). Find it with every game's rush settings (rush-core.js): Random or
+// Today's; 3 min, 5 min or Survival; three misses end the run. The clock stands while you read a verdict and while the
+// menu or the rules are open. An answer is judged by the plays the puzzle weighed, each tried in hundreds of deals of the
+// cards you couldn't see; a play outside them is tried against the best in deals of its own. The run is kept as it goes
+// (tribute:rush), your bests by clock in tribute:rushBest, today's runs in tribute:rushDaily, the next run's choices in
+// tribute:rushNext.
+const RUSH = "tribute:rush", RUSH_BEST = "tribute:rushBest", RUSH_DAILY = "tribute:rushDaily", RUSH_SEEN = "tribute:rushSeen", RUSH_NEXT = "tribute:rushNext";
+let rush = null, bank = null, rushLib = null, ticking = null, savedAt = 0, rushPick = null;   // rushPick: the menu's choices for the next run
+async function loadRush() {
+  rushLib ||= await import("./tribute-rush.js");
+  bank ||= (await import("./tribute-puzzles.js")).PUZZLES;
+}
+const rushPuzzle = () => (rush && bank ? bank.find(p => p.id === rush.order[rush.i]) : null);
+const here = () => `${rush.seed}:${rush.i}`;                     // which puzzle of which run: an answer worked out late lands only there
+const rushClock = () => (rush.left == null ? MODES.survival.label : clockText(rush.left));
+const lv = x => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}`;
+function rushStatus() {
+  return `<span class="tb-rush"><b>Puzzle ${rush.i + 1}</b> · ✓ ${rush.score} · <span class="tb-strikes" aria-label="${rush.strikes} of 3 missed">${strikeMarks(rush.strikes)}</span> · <span id="rushClock">${rushClock()}</span></span>`;
+}
+/** The next run's kind and clock: what the rush's menu last started (Random and 3 min to begin with). */
+const rushNext = () => { const n = read(RUSH_NEXT, null); return { kind: n?.kind === "daily" ? "daily" : "random", mode: modeOf(n?.mode) }; };
+/** A run from before the clocks were chosen was a random five-minute one. */
+const upgradeRush = r => (r?.v === 1 ? { ...r, v: 2, kind: "random", mode: "five", wait: 0 } : r?.v === 2 ? r : null);
+async function startRush() {
+  const done = busy("Dealing the puzzles", { delay: 150 });
+  try { await loadRush(); } finally { done(); }
+  const { kind, mode } = rushNext(), daily = kind === "daily", seed = daily ? today() : (Math.random() * 2 ** 32) >>> 0;
+  rush = { v: 2, kind, mode, seed, order: rushLib.runOrder(bank, seed, daily ? [] : read(RUSH_SEEN, [])), i: 0, score: 0, strikes: 0, ...clockFor(mode), answer: null, over: false, log: [] };
+  closeDialogs();
+  showRushPuzzle();
+}
+/** The puzzle in hand laid on the table: its seat yours, the others named as at your own table. */
+function showRushPuzzle() {
+  const p = rushPuzzle();
+  if (!p) { endRush(); return; }
+  G = rushLib.replay(p); me = p.seat;
+  const names = []; names[me] = "You";
+  for (let k = 1; k < 4; k++) names[(me + k) % 4] = BOTS[k - 1];
+  S = { v: 1, names, humans: [me], started: 0 };
+  gen++; selected.clear(); hint = null;
+  // left while a play was being checked (it wasn't counted yet): asked again; answered, but not yet in words: put now
+  if (rush.answer?.verdict === "unweighed") rush.answer = null;
+  if (rush.answer) for (const id of rushLib.weighed(p).best.action.cards || []) selected.add(id);
+  save(); render(); tick();
+  if (rush.answer && !rush.answer.list) explainRush(p, here());
+}
+function tick() {
+  clearInterval(ticking);
+  if (!rush || rush.over || IN_FRAME) return;
+  let last = Date.now();
+  ticking = setInterval(() => {
+    const now = Date.now(), dt = now - last;
+    last = now;
+    if (!rush || rush.answer || rush.over || isPaused() || document.hidden) return;
+    const out = runDown(rush, dt), el = $("rushClock");
+    if (el) el.textContent = rushClock();
+    if (out) endRush();
+    else if (now - savedAt > 3000) { savedAt = now; save(); }
+  }, 250);
+}
+/** Your answer: judged at once from the puzzle (a play it didn't weigh, by a look-ahead), then explained in words. */
+async function rushAnswer(action) {
+  if (!rush || rush.answer || rush.over) return;
+  const p = rushPuzzle(), at = here(), j = rushLib.judge(p, G, action);
+  rush.answer = { action, verdict: j.verdict, gap: j.gap, mine: j.mine?.value ?? null, list: null };
+  if (j.verdict === "unweighed") {
+    render();
+    const out = await think(clone(G), me, "playout", { actions: [j.best.action, action] });
+    if (!rush || here() !== at) return;
+    const mean = v => (v?.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+    const b = mean(out?.vals?.[0]), m = mean(out?.vals?.[1]);
+    const gap = b !== null && m !== null ? b - m : 1;
+    rush.answer.verdict = gap <= 0.1 ? "fine" : "wrong";
+    rush.answer.gap = Math.max(0, gap);
+    rush.answer.mine = j.best.value - rush.answer.gap;
+    rush.answer.checked = out?.n || 0;
+  }
+  if (rush.answer.verdict === "wrong") rush.strikes++; else rush.score++;
+  rush.log.push({ id: p.id, verdict: rush.answer.verdict, gap: rush.answer.gap });
+  write(RUSH_SEEN, [...read(RUSH_SEEN, []).filter(id => id !== p.id), p.id].slice(-150));
+  if (rush.strikes >= 3) rush.over = true;
+  selected.clear();
+  for (const id of rushLib.weighed(p).best.action.cards || []) selected.add(id);
+  save(); render();
+  explainRush(p, at);
+}
+/** The puzzle's plays in words (the hint's reckoning, without a look-ahead) with what each was worth in its deals. */
+async function explainRush(p, at) {
+  const list = await think(clone(G), me, "weigh");
+  if (!rush || here() !== at || !rush.answer) return;
+  const sig = a => rushLib.signature(a, G.level), mine = sig(rush.answer.action);
+  const words = new Map((Array.isArray(list) ? list : []).map(o => [sig(o.action), o]));
+  const titled = a => words.get(sig(a))?.title || (a.t === "pass" ? "Pass" : `Play ${E.playName(E.readingFor(a.cards, G.level, null) || { type: "single", key: 0 })}`);
+  const item = (a, value) => {
+    const w = words.get(sig(a));
+    return { action: a, title: titled(a), pros: (w?.pros || []).slice(), cons: (w?.cons || []).slice(), plays: w?.plays ?? null, holds: w?.holds ?? null, levels: value, yours: sig(a) === mine };
+  };
+  // the best first, then yours, then the others by what they were worth
+  const { opts, best } = rushLib.weighed(p);
+  const rest = opts.filter(o => o !== best).map(o => item(o.action, o.value));
+  if (!opts.some(o => sig(o.action) === mine) && rush.answer.mine !== null) rest.push(item(rush.answer.action, rush.answer.mine));
+  rest.sort((x, y) => y.yours - x.yours || y.levels - x.levels);
+  const top = item(best.action, best.value), a = rush.answer, yours = rest.find(o => o.yours);
+  const over = `${p.n} deals of the cards you couldn't see`, also = a.checked ? ` (set against it in ${a.checked} deals of its own)` : "";
+  top.why = a.verdict === "best" ? `You found it: ${mid(top.title)}, ${lv(best.value)} levels a hand over ${over}.`
+    : a.verdict === "fine" ? `Yours, ${mid(yours?.title || "your play")}${also}, did as well as the best, ${mid(top.title)}: ${lv(a.mine)} levels a hand against ${lv(best.value)} over ${over}.`
+    : `The best was ${mid(top.title)}: ${lv(best.value)} levels a hand over ${over}; yours, ${mid(yours?.title || "your play")}${also}, ${lv(a.mine)}.`;
+  top.out = (Array.isArray(list) ? list[0]?.out : null) || null;
+  rush.answer.list = [top, ...rest];
+  save(); render();
+}
+function nextRush() {
+  if (!rush) return;
+  if (rush.over || timeUp(rush)) { endRush(); return; }
+  rush.i++; rush.answer = null;
+  graceAgain(rush);
+  showRushPuzzle();
+}
+/** The run's end: noted once in your bests by clock (and today's), and its score. */
+function endRush() {
+  if (!rush) return;
+  rush.over = true;
+  clearInterval(ticking);
+  if (rush.best == null) {
+    const res = noteRun(read(RUSH_BEST, {}), read(RUSH_DAILY, {}), { kind: rush.kind, mode: rush.mode, score: rush.score }, today());
+    write(RUSH_BEST, res.bests);
+    if (rush.kind === "daily") write(RUSH_DAILY, res.daily);
+    rush.best = res.best; rush.was = res.was;
+  }
+  save(); render();
+  $("rushHead").textContent = endTitle(timeUp(rush) ? "time" : rush.strikes >= 3 ? "strikes" : "bank");
+  const missed = rush.log.filter(x => x.verdict === "wrong").length, was = rush.was ?? 0;
+  $("rushBody").innerHTML = `<p class="tb-rush-score"><b>${rush.score}</b> solved${rush.score > was ? " · your best" : was ? ` · best ${was}` : ""}</p>`
+    + `<p class="tb-rush-sub">${MODES[modeOf(rush.mode)].label}${rush.kind === "daily" ? ", today's run" : ""}: ${rush.log.length} answered, ${missed} missed${rush.left != null ? `, ${clockText(rush.left)} left on the clock` : ""}.</p>`;
+  if (!$("rushDlg").open) $("rushDlg").showModal();
+}
+function leaveRush() {
+  rush = null;
+  clearInterval(ticking);
+  try { localStorage.removeItem(RUSH); } catch { /* private mode */ }
+  closeDialogs();
+  load();
+}
+/** The verdict, or the question while it's open; and your buttons. */
+function drawRush(box, say) {
+  const a = rush.answer, p = rushPuzzle();
+  say.hidden = false;
+  if (!a) {
+    const top = G.top, mate = E.partnerOf(me);
+    const ask = top ? `${nameOf(top.seat)}${top.seat === mate ? ", your partner," : ""} played ${E.playName(top.reading)}. Your best answer?` : "Your lead. The best play?";
+    say.innerHTML = `<b>Find the best play</b> ${esc(ask)}`;
+    if (rush.over) { box.append(goBtn("See the score", endRush, "primary")); return; }
+    moveButtons(box);
+    return;
+  }
+  if (a.verdict === "unweighed") { say.innerHTML = `<b>Checking</b> <span class="tb-thinking">your play against the best, in deals of the cards you can't see…</span>`; return; }
+  const { opts, best } = rushLib.weighed(p);
+  const second = opts.filter(o => o !== best).sort((x, y) => y.value - x.value)[0];
+  const also = a.checked ? `, set against it in ${a.checked} deals of its own,` : "";
+  const bestWords = a.list?.[0], mineWords = a.list?.find(o => o.yours);
+  let html;
+  if (a.verdict === "best") html = `<b class="tb-hit">✓ Best</b> ${esc(cap(bestWords?.title || "the best play"))}: ${lv(best.value)} levels a hand over ${p.n} deals of the cards you couldn't see${second ? `; the next best ${lv(second.value)}` : ""}.${bestWords?.pros[0] ? ` ${esc(cap(bestWords.pros[0]))}.` : ""}`;
+  else if (a.verdict === "fine") html = `<b class="tb-hit">✓ As good</b> Yours${also} does ${lv(a.mine)} levels a hand, within a tenth of the best: ${esc(mid(bestWords?.title || "the best play"))}, ${lv(best.value)} over ${p.n} deals.`;
+  else html = `<b class="tb-miss">✗ Not the best</b> ${esc(cap(bestWords?.title || "another play"))} does ${lv(best.value)} levels a hand over ${p.n} deals; yours${also} ${lv(a.mine)}, ${a.gap.toFixed(1)} worse.${mineWords?.cons[0] ? ` Against yours: ${esc(mineWords.cons[0])}.` : ""}${bestWords?.pros[0] ? ` For the best: ${esc(bestWords.pros[0])}.` : ""}`;
+  say.innerHTML = `${html}${a.list ? ' <button type="button" class="link tb-why-btn">Why?</button>' : ' <span class="tb-thinking">…</span>'}`;
+  say.querySelector(".tb-why-btn")?.addEventListener("click", () => showWhy(rush.answer.list));
+  box.append(goBtn(rush.over ? "See the score" : "Next puzzle", nextRush, "primary"));
+}
+
+// ---------- together: partners across the table, against two computer players or two friends ----------
+// A pair sits at seats 0 and 2, which are one side (the first to sit down at 0, the other across), so they always play
+// as partners, and the computer players take 1 and 3. A party of three or four (README, Party) seats its others at 1
+// and 3, the other side, as they sit down; the computer plays any seat nobody has.
+let roomData = null, joining = null;                            // joining: the mark while you sit down, until the table's drawn
+const seated = () => { joining?.(); joining = null; };
+const mySlot = () => (together.room ? seatsOf(roomData).find(([id]) => id === together.room.uid)?.[1].slot ?? 0 : 0);
+/** A new match at the table, for so many people: the request's (a party's), or the table's as it was; its rules (the
+ *  computer players, the coach, the card counter) the table's before it, or this phone's at a new table. */
+function freshRoom(players, { ask = null, people = null, rules = null } = {}) {
+  const humans = peopleSeats(people ?? ask?.people);
+  const names = [0, 1, 2, 3].map(s => (humans.includes(s) ? "" : BOTS[s - 1]));
+  for (const [, p] of Object.entries(players)) names[seatOfSlot(p.slot)] = p.name;
+  const game = E.toRoom(E.newGame({ mode: opts.mode, deals: opts.deals }, (Math.random() * 2 ** 32) >>> 0));
+  const kept = { bots: rules?.bots || strength(), coach: COACH.includes(rules?.coach) ? rules.coach : opts.coach, counter: typeof rules?.counter === "boolean" ? rules.counter : !!opts.counter };
+  return { v: 1, app: APP, created: Date.now(), players, game, table: { names, humans, started: Date.now(), ...kept } };
+}
+let roomHand = null;                                             // the table's hand last drawn here, by its seed
+function onRoomState(g) {
+  roomData = g;
+  if (g.game && roomHand !== null && g.game.seed !== roomHand) {
+    if (g.game.handNo > 0) keepHand();
+    else tableHands = [];
+  }
+  if (g.game) roomHand = g.game.seed;
+  me = seatOfSlot(mySlot());
+  const humans = g.table?.humans || peopleSeats(2), names = [...(g.table?.names || [])];
+  for (const [, p] of seatsOf(g)) names[seatOfSlot(p.slot)] = p.name;
+  // a seat kept for a person until they sit down: a pair's partner by the name they go by here, if they're about
+  const partner = humans.length === 2 ? together.partner()?.name : null;
+  for (const s of humans) names[s] ||= s === me ? together.room?.name || "You" : partner || (s === E.partnerOf(me) ? "Your partner" : "On the way");
+  if (S && (S.coach !== g.table?.coach)) hint = null;            // the coach changed for the table: its word on the old goes
+  S = { ...g.table, names, humans };
+  // your own move already on the table, on its way: an older state meanwhile (a seat coming online) doesn't take it back
+  const behind = pending && g.game?.handNo === pending.handNo && (g.game.log?.length || 0) < pending.len;
+  if (!behind) {
+    const was = G ? `${G.handNo}:${G.log.length}` : "";
+    G = E.fromRoom(clone(g.game));
+    if (`${G.handNo}:${G.log.length}` !== was) { gen++; keepPicked(); hint = null; }
+  }
+  if (G.phase !== "over" && $("resultDlg").open) $("resultDlg").close();
+  render();
+  seated();
+  if (!behind) kick(0);
+}
+let pending = null;                                              // your move on its way to the room: { handNo, len } it makes
+/** A move at the table together, as one transaction on the room's copy. Your own shows at once: the room's answer is a
+ *  round trip away (seconds, from far enough), and only you move your seat, so it comes back as you made it or not at
+ *  all (then the room's state is put back). */
+async function applyTogether(seat, act) {
+  const len = G.log.length, handNo = G.handNo;
+  let shown = null;
+  if (seat === me) {
+    try {
+      const next = clone(G);
+      E.act(next, seat, act);
+      G = next; gen++; selected.clear(); hint = null;
+      pending = shown = { handNo, len: G.log.length };
+      render();
+    } catch { /* not a move the rules allow: the room's own check turns it down */ }
+  }
+  const ok = await together.act(g => {
+    const game = E.fromRoom(g.game);
+    if (game.handNo !== handNo || game.log.length !== len) return false;   // someone moved first
+    try { E.act(game, seat, act); } catch { return false; }
+    g.game = E.toRoom(game);
+  });
+  if (pending === shown) pending = null;
+  if (!ok) {
+    if (roomData) G = E.fromRoom(clone(roomData.game));
+    render(); kick(300);
+  }
+}
+async function nextTogether() {
+  const handNo = G.handNo;
+  $("resultDlg").close();
+  await together.act(g => {
+    const game = E.fromRoom(g.game);
+    if (game.handNo !== handNo || game.phase !== "over") return false;
+    if (game.result.over) { const fresh = freshRoom(g.players, { people: g.table?.humans?.length, rules: g.table }); g.game = fresh.game; g.table = fresh.table; }
+    else g.game = E.toRoom(E.nextHand(game, (Math.random() * 2 ** 32) >>> 0));
+  });
+}
+function drawPartner() {
+  if (!together.room) return;
+  const left = (S?.humans?.length || 2) - seatsOf(roomData).length;
+  if (left > 1) { toastOnce(`Waiting for ${left} more to sit down…`); return; }
+  const p = together.partner();
+  if (left === 1) toastOnce(S?.humans?.length > 2 ? "Waiting for one more to sit down…" : "Waiting for your partner to join…");
+  else if (p?.game && p.game !== "tribute") toastOnce(`${p.name} is in ${GAMES[p.game]?.name || "another game"}`);
+}
+let toldAt = "";
+function toastOnce(msg) { if (toldAt === msg) return; toldAt = msg; toast(msg, 3000); }
+async function askName() {
+  const saved = localStorage.getItem("crates:name");
+  if (saved) return saved;
+  const dlg = $("nameDlg");
+  dlg.showModal();
+  $("nameInput").focus();
+  const name = await new Promise(res => dlg.addEventListener("close", () => res($("nameInput").value.trim()), { once: true }));
+  if (name) try { localStorage.setItem("crates:name", name); } catch { /* private mode */ }
+  return name;
+}
+const together = createTogether({
+  game: "tribute",
+  app: APP,
+  toast,
+  askName,
+  valid: g => g?.v === 1 && !!g.game && !!g.table,
+  fresh: freshRoom,
+  slots: g => g?.table?.humans?.length || 2,
+  onState: onRoomState,
+  onPresence: render,
+  onLeave: () => { roomData = null; seated(); load(); },
+  // a match played to its end: the pair's record, as a team (a party's isn't recorded)
+  result: g => {
+    const game = g.game, us = E.teamOf(seatOfSlot(mySlot()));
+    if (game?.phase !== "over" || !game.result?.over) return null;
+    return { match: `${g.table?.started}`, score: game.result.levels?.[us] ?? null, won: game.result.winner === us, coop: true, lower: false };
+  },
+});
+
+// ---------- the menu ----------
+let toastTimer = null;
+function toast(msg, ms = 2400) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+}
+function openMenu() {
+  const body = $("menuBody");
+  body.replaceChildren();
+  const set = (k, v) => { opts[k] = v; write(OPTS, opts); render(); };
+  // the copies, to check the coach elsewhere: this decision (or your last) and the match so far, in words
+  const copies = () => [action("Copy turn", copyTurn, "link"), action("Copy game", copyGame, "link")];
+  if (together.room) {
+    part(body, "play").append(...copies());
+    part(body, "together").append(line(`You and ${nameOf(E.partnerOf(me))} against ${nameOf((me + 1) % 4)} and ${nameOf((me + 3) % 4)}.`), action("Back to solo", () => together.leave(), "link"));
+  } else if (rush) {
+    // the rush's own, as every game's rush has it (rush-menu.js): a run and its clock, your bests
+    rushPick ??= rushNext();
+    rushMenu(body, { pick: rushPick, start: () => { write(RUSH_NEXT, rushPick); rushPick = null; startRush(); }, results: rush.over ? endRush : null, back: leaveRush,
+      backText: "Back to the match", bests: read(RUSH_BEST, {}), daily: read(RUSH_DAILY, {}), day: today(), inFrame: IN_FRAME, todayOn: rush.kind === "daily" && !rush.over });
+  } else part(body, "play").append(action("New match", () => newMatch(), "primary"), action("Puzzle rush", () => startRush(), ""), ...copies());
+  const cp = progressOf("tribute", COURSE);
+  part(body, "play").append(action(cp.done ? `Learn: ${cp.done} of ${cp.of} lessons done` : "Learn Guandan, from the rules", () => course.open()));
+  // the table's coach: at a table together, written to the table, for every phone at it; a party's guests see the host's
+  const rule = (k, v) => { set(k, v); if (together.room) together.act(g => { if (!g.table) return false; g.table[k] = v; }); };
+  part(body, "settings").append(
+    choice("View", VIEWS, wants3D(opts.view, "3d") ? "3d" : "flat", v => { opts.view = v; write(OPTS, opts); showView(); render(); }),
+    choice("Your cards, held sideways", [["stack", "Stacked"], ["row", "Spread out"]], sideOf(), v => { opts.side = v; write(OPTS, opts); render(); }),
+    setsRules() ? toggle("Coach", coach() !== "off", v => { rule("coach", v ? "hints" : "off"); hint = null; advise(); render(); })
+      : line(`Coach ${coach() === "off" ? "off" : "on"}, as ${party?.partyHost()?.name || "the host"} set it for the table.`),
+  );
+  const st = read(STATS, null), rushBests = rush ? "" : bestsLine(read(RUSH_BEST, {}));
+  if (rushBests) part(body, "about").append(line(rushBests));
+  if (st?.hands) part(body, "about").append(line(`${st.hands} hand${st.hands === 1 ? "" : "s"}, your side out first in ${st.firsts} (${st.oneTwo} one-two)${st.matches ? ` · ${st.matches} match${st.matches === 1 ? "" : "es"}, won ${st.wins}` : ""}`));
+  if (!$("menuDlg").open) $("menuDlg").showModal();
+}
+
+// ---------- copying it out (Menu) ----------
+// For checking the coach elsewhere. Copy turn: your decision now (between your moves, your last one, while the page is
+// open) in words as your seat saw it: the rules, the levels and the tribute, every seat's cards played and how many it
+// holds, the trick so far, your cards, and the coach's plays with what speaks for and against each and their numbers
+// (your last move checked: the two tried in deals of the cards you can't see). Copy game: every hand of the match so
+// far, move by move, your cards at each of your moves with the coach's choice beside yours, and how each hand ended. A
+// finished hand is kept as words for the match (tribute:match; at a table together, on this device).
+const MATCH_WORDS = "tribute:match";
+let tableHands = [];                                             // together: the hands before this one, as words
+const CARD_KEY = "Cards: rank then suit (♠ ♥ ♣ ♦), 10 for ten; SJ and BJ the small and big jokers; (w) marks a wild card, a heart of the hand's level.";
+const cw = (id, level) => (E.isJoker(id) ? (E.rankOf(id) === E.BJ ? "BJ" : "SJ") : `${FACE(E.rankOf(id))}${E.SUITS[E.suitOf(id)]}${E.isWild(id, level) ? "(w)" : ""}`);
+const cws = (ids, level) => E.sortHand(ids, level).map(id => cw(id, level)).join(" ");
+const whoW = (seat, start = true) => (seat === me ? (start ? "You" : "you") : nameOf(seat));
+const s3 = (seat, verb) => `${whoW(seat)} ${seat === me ? verb : `${verb}${/(s|sh|ch)$/.test(verb) ? "es" : "s"}`}`;   // "You pass", "Wei passes"
+const ORD = ["", "first", "second", "third", "fourth"];
+/** The rules, as the Rules button has them, in plain words. */
+const rulesWords = () => `Rules: ${rules().replace(/<\/p>\s*<p>/g, " ").replace(/<[^>]+>/g, "")}`;
+/** A move in words: "lead a pair of 9s (9♠ 9♦)", "beat it with three Qs (Q♠ Q♥ Q♦)", "pass", "give 4♣ back". */
+function moveWords(a, level, top) {
+  if (!a) return "?";
+  if (a.t === "pass") return "pass";
+  if (a.t === "return") return `give ${cw(a.card, level)} back`;
+  const rd = (a.as && E.classify(a.cards, level).find(r => r.type === a.as.type && r.key === a.as.key && !!r.sf === !!a.as.sf)) || E.readingFor(a.cards, level, top) || E.classify(a.cards, level)[0];
+  return `${top ? "beat it with" : "lead"} ${rd ? E.playName(rd) : "those cards"} (${cws(a.cards, level)})`;
+}
+/** A play as the log has it, in words: "a pair of 9s (9♠ 9♦)". */
+function playWords(e, level) {
+  const rd = E.classify(e.cards, level).find(r => r.type === e.type && r.key === e.key && (r.bomb || 0) === (e.bomb || 0)) || E.classify(e.cards, level)[0];
+  return `${rd ? E.playName(rd) : "a play"} (${cws(e.cards, level)})`;
+}
+/** The tribute this hand, in words, from its log. */
+function tributeWords(st) {
+  const said = [];
+  for (const e of st.log) {
+    if (e.e === "no-tribute") said.push("no tribute this hand");
+    else if (e.e === "resist") said.push(`${e.seats.map(s => whoW(s)).join(" and ")} hold both big jokers between them: no tribute`);
+    else if (e.e === "tribute") said.push(`${s3(e.from, "pay")} ${cw(e.card, st.level)} to ${whoW(e.to, false)}`);
+    else if (e.e === "return") said.push(`${s3(e.from, "give")} ${cw(e.card, st.level)} back to ${whoW(e.to, false)}`);
+  }
+  return said.length ? `Tribute: ${said.join("; ")}.` : st.handNo === 0 ? "No tribute in the first hand." : "";
+}
+/** A position as your seat saw it, in words: the levels, the tribute, every seat, the trick so far, your decision. */
+function positionWords(st) {
+  const us = E.teamOf(me), lv = st.level, mate = E.partnerOf(me), right = (me + 1) % 4, left = (me + 3) % 4;
+  const out = [`Hand ${st.handNo + 1}${st.opts.mode === "deals" ? ` of a match of ${st.opts.deals}` : ", the match played to the ace"}. Levels: your side (you and ${nameOf(mate)}) ${FACE(st.levels[us])}, the other (${nameOf(right)} and ${nameOf(left)}) ${FACE(st.levels[1 - us])}. This hand is played at ${FACE(lv)}${st.declarer >= 0 ? `, ${st.declarer === us ? "your" : "the other"} side's level` : ""}: the ${FACE(lv)}s rank above the aces, below the jokers, and the two ${FACE(lv)}♥ are wild.`,
+    `Play passes ${[0, 1, 2, 3, 0].map(i => whoW((me + i) % 4)).join(" → ")}; ${nameOf(mate)}, your partner, sits across.`];
+  const trib = tributeWords(st);
+  if (trib) out.push(trib);
+  for (const i of [0, 1, 2, 3]) {
+    const s = (me + i) % 4, n = st.hands[s].length;
+    out.push("", `${whoW(s)}${s === mate ? " (your partner)" : ""}: ${n ? `${n} card${n === 1 ? "" : "s"} left` : `out, ${ORD[st.out.indexOf(s) + 1]}`}.`);
+    if (s === me) out.push(`  Your cards: ${cws(st.hands[me], lv)}.`);
+    out.push(`  Played, in order: ${st.played[s].length ? st.played[s].map(id => cw(id, lv)).join(" ") : "nothing yet"}.`);
+  }
+  // the trick so far: the plays and passes since the last trick was taken
+  let trick = [], led = false;
+  for (const e of st.log) {
+    if (e.e === "trick") { trick = []; led = false; }
+    else if (e.e === "play") { trick.push(`${s3(e.seat, led ? "play" : "lead")} ${playWords(e, lv)}`); led = true; }
+    else if (e.e === "pass") trick.push(s3(e.seat, "pass"));
+  }
+  const ask = E.asked(st, me);
+  out.push("");
+  if (trick.length) out.push(`This trick: ${trick.join("; ")}.`);
+  if (ask === "return") {
+    const to = st.tribute.returns.find(r => r.from === me && r.card === null).to;
+    out.push(`Your move: give a card back to ${nameOf(to)}, 10 or lower and not a level card (yours that may go: ${cws(E.returnable(st.hands[me], lv), lv)}).`);
+  } else if (ask === "play") out.push(st.top ? `Your move: beat ${st.top.seat === me ? "your own" : `${nameOf(st.top.seat)}'s`} ${E.playName(st.top.reading).replace(/^an? /, "")} with a higher play of the same kind, or a bomb; or pass.` : "Your move: lead any play.");
+  else out.push("Nothing for you to decide.");
+  return out.join("\n");
+}
+/** The coach's plays in words, its choice first: its reasons, then each play's numbers and what speaks for and against
+ *  it; checked against yours (c), how the two came out in the deals played out. */
+function coachWords(list, st, c = null, top = st.top?.reading || null) {
+  const lv = st.level, out = [];
+  if (!list?.length) return "The coach had nothing to say.";
+  out.push(`The coach (the computer player's reckoning at Hard, from what your seat could see): ${list[0].why || moveWords(list[0].action, lv, top)}${list[0].out ? ` ${list[0].out}` : ""}`);
+  if (c) {
+    const same = E.signature(c.mine.action, lv) === E.signature(c.best.action, lv);
+    out.push(`Your move: ${moveWords(c.mine.action, lv, top)}. ${same ? "The same as the coach's." : c.differs ? c.words : "As good as the coach's, as near as the deals can tell."}`);
+    if (c.n) out.push(`The two played out in ${c.n} deals of the cards you can't see, the rest of the hand to its end: the coach's ${c.gap >= 0 ? "ahead" : "behind"} by ${Math.abs(c.gap).toFixed(2)} levels a hand on average (standard error ${c.se.toFixed(2)}).`);
+  }
+  out.push("", "The plays it weighed, its choice first (+ for, − against; to go out: the plays your hand needs after it, split as the computer would; holds: the chance no opponent beats it except with a bomb; levels: the rest of the hand played out in deals of the cards you can't see, and what that did to your side's levels on average):");
+  list.forEach((o, i) => {
+    const stats = [];
+    if (o.plays != null) stats.push(o.plays ? `${o.plays} to go out after it` : "goes out");
+    if (o.holds != null && o.plays) stats.push(`holds ${Math.round(o.holds * 100)}%`);
+    if (o.levels != null) stats.push(`${o.levels >= 0 ? "+" : "−"}${Math.abs(o.levels).toFixed(2)} levels`);
+    out.push(`${i + 1}. ${o.title}${o.action.t === "play" ? ` (${cws(o.action.cards, lv)})` : ""}${o.yours && i ? " (yours)" : ""}${stats.length ? `: ${stats.join("; ")}` : ""}`);
+    for (const p of o.pros) out.push(`   + ${cap(p)}`);
+    for (const x of o.cons) out.push(`   − ${cap(x)}`);
+  });
+  return out.join("\n");
+}
+/** The coach on a move of yours, in a few words. */
+function coachSaid(n, lv) {
+  if (!n.done || !n.best) return "(The coach hadn't answered.)";
+  if (E.signature(n.best, lv) === E.signature(n.mine, lv)) return "The coach: the same.";
+  const its = moveWords(n.best, lv, n.top);
+  if (n.checked === false) return `The coach's pick: ${its} (unchecked).`;
+  return n.differs ? `The coach: ${its}. ${n.words}` : `The coach: ${its}, but yours is as good, as near as its deals can tell.`;
+}
+/** A hand move by move as your seat saw it: your cards as dealt, the tribute, every play and pass, your cards at each
+ *  of your moves with the coach's beside yours, and how it ended. */
+function handWords(st, notes) {
+  const lv = st.level, us = E.teamOf(me);
+  const dealt = E.deal(st, st.seed).hands[me].slice();
+  for (const e of st.log) if (e.e === "tribute") {                // the tribute undone: the cards as they came
+    if (e.to === me) dealt.splice(dealt.indexOf(e.card), 1);
+    if (e.from === me) dealt.push(e.card);
+  }
+  const out = [`Hand ${st.handNo + 1}: played at ${FACE(lv)}${st.declarer >= 0 ? ` (${st.declarer === us ? "your" : "the other"} side's level)` : ""}; your side at ${FACE(st.levels[us])}, the other at ${FACE(st.levels[1 - us])}.`,
+    `Your cards as dealt: ${cws(dealt, lv)}.`];
+  const at = new Map();
+  for (const n of notes) if (n.at !== undefined) at.set(n.at, [...(at.get(n.at) || []), n]);
+  let i = 0, led = false;
+  const say = t => out.push(`${++i}. ${t}`);
+  for (let x = 0; x <= st.log.length; x++) {
+    let covered = null;
+    for (const n of at.get(x) || []) {
+      say(`Your cards: ${cws(n.cards, lv)}. You ${moveWords(n.mine, lv, n.top)}. ${coachSaid(n, lv)}`);
+      covered = n.mine;
+    }
+    const e = st.log[x];
+    if (!e) break;
+    const mineSaid = covered && (e.seat === me || e.from === me) && (e.e === covered.t || (e.e === "return" && covered.t === "return"));
+    if (e.e === "lead") say(`The card turned up, ${cw(e.card, lv)}, is ${e.seat === me ? "yours: you lead" : `${nameOf(e.seat)}'s: ${nameOf(e.seat)} leads`}.`);
+    else if (e.e === "no-tribute" || e.e === "resist" || e.e === "tribute") {
+      if (e.e === "tribute") say(`${s3(e.from, "pay")} ${cw(e.card, lv)} to ${whoW(e.to, false)} in tribute.`);
+      else if (e.e === "resist") say(`${e.seats.map(s => whoW(s)).join(" and ")} hold both big jokers between them: no tribute.`);
+    } else if (e.e === "return") { if (!mineSaid) say(`${s3(e.from, "give")} ${cw(e.card, lv)} back to ${whoW(e.to, false)}.`); }
+    else if (e.e === "play") { if (!mineSaid) say(`${s3(e.seat, led ? "play" : "lead")} ${playWords(e, lv)}.`); led = true; }
+    else if (e.e === "pass") { if (!mineSaid) say(`${s3(e.seat, "pass")}.`); }
+    else if (e.e === "trick") { say(`${whoW(e.seat)} take${e.seat === me ? "" : "s"} the trick${e.lead !== e.seat ? `, and being out, ${whoW(e.lead, false)} lead${e.lead === me ? "" : "s"}` : ""}.`); led = false; }
+    else if (e.e === "out") say(`${whoW(e.seat)} ${e.seat === me ? "are" : "is"} out, ${ORD[e.place]}.`);
+  }
+  const r = st.result;
+  if (r) {
+    const ours = r.team === us;
+    out.push(`Out in order: ${r.order.map(s => whoW(s)).join(", ")}. ${ours ? "Your side rises" : "The other side rises"} ${r.gain} level${r.gain > 1 ? "s" : ""}, to ${FACE(r.levels[r.team])}${r.passedA ? ", passing the ace" : ""}. Levels: yours ${FACE(r.levels[us])}, theirs ${FACE(r.levels[1 - us])}.${r.over ? ` ${r.winner === us ? "Your side wins" : "The other side wins"} the match.` : ""}`);
+  } else out.push("(The hand goes on.)");
+  const checks = notes.filter(n => n.done && n.checked !== false);
+  if (checks.length) out.push(`Checked by the coach: it agreed with ${checks.filter(n => !n.differs).length} of your ${checks.length} moves.`);
+  return out.join("\n");
+}
+/** The hand just played kept in words for Copy game. */
+function keepHand() {
+  if (!G?.log.length || rush) return;
+  const words = handWords(G, C.filter(n => n.hand === handId()));
+  if (together.room) tableHands.push(words);
+  else write(MATCH_WORDS, [...read(MATCH_WORDS, []), words]);
+}
+/** Words to the clipboard within the tap that asked for them (they may take the coach a moment: the clipboard waits);
+ *  where the browser refuses, a sheet to copy them by hand. */
+function copyOut(what, words) {
+  const sheet = text => { $("copyHead").textContent = what; $("copyText").value = text; $("copyDlg").showModal(); $("copyText").select(); };
+  const done = () => toast(`${what} copied`);
+  if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    navigator.clipboard.write([new ClipboardItem({ "text/plain": words.then(t => new Blob([t], { type: "text/plain" })) })]).then(done, () => words.then(sheet));
+  } else words.then(t => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(t).then(done, () => sheet(t)) : sheet(t)));
+}
+function copyTurn() {
+  if (!G) return;
+  const head = st => `Guan Dan: a decision, to check the coach.\n\n${rulesWords()}\n${CARD_KEY}\n\n${positionWords(st)}`;
+  if (G.phase !== "over" && E.asked(G, me)) {
+    const st = clone(G), ready = hint?.key === keyNow() && hint.list ? hint.list : null;
+    if (!ready) toast("The coach is weighing it…");
+    const list = ready ? Promise.resolve(ready) : think(clone(st), me, "hints").then(l => (Array.isArray(l) ? l : l ? [l] : []));
+    copyOut("Your turn", list.then(l => `${head(st)}\n\n${coachWords(l, st)}`));
+    return;
+  }
+  // between your moves: your last one, as the table stood then, checked against the coach's
+  const n = C[C.length - 1], st = n && n.hand === handId() ? shots.get(n) : null;
+  if (st) {
+    const c = checked.get(n);
+    if (!c) toast("The coach is checking it…");
+    copyOut("Your last turn", (c ? Promise.resolve(c) : think(clone(st), me, "check", { action: n.mine })).then(k => `${head(st)}\n\n${k ? coachWords(k.list, st, k, n.top) : "The coach had nothing to say."}`));
+    return;
+  }
+  copyOut("The table", Promise.resolve(head(G)));
+}
+function copyGame() {
+  if (!G) return;
+  const before = together.room ? tableHands : read(MATCH_WORDS, []);
+  const head = `Guan Dan: a match, move by move, to check the coach, its choice beside each of your moves (the others' cards unseen). With the coach on Check or Always a move of yours was checked against its own, the two played out in deals of the cards you couldn't see; on Hints or Off, its pick is beside yours, unchecked.\n\n${rulesWords()}\n${CARD_KEY}`;
+  copyOut("The game", Promise.resolve([head, ...before, handWords(G, C.filter(n => n.hand === handId()))].join("\n\n")));
+}
+
+// ---------- the rules ----------
+function rules() {
+  return `<p><b>Two decks, four players, two sides.</b> 108 cards, 27 each; your partner sits across from you, and play passes to the right. Be first out of cards, and get your partner out soon after.</p>
+<p><b>The level.</b> Each side has a level, from 2 up to the ace; the hand is played at the level of the side that won the last one (2 to begin). The level's cards rank above the ace, below the jokers: 2 3 4 … K A, level, small joker, big joker. The two ♥ of the level are wild (★): either stands for any card but a joker, in any play; alone, it's just a level card.</p>
+<p><b>Plays.</b> A single; a pair; three alike; a full house (three and a pair); a straight of exactly five; three pairs in a row; two triples in a row. In a straight or a run the ace may be low or high, and a level card counts as itself. Lead anything; the next players must play the same kind (and length), higher, or pass. When everyone else passes, the last to play leads. If he has just gone out, his partner leads.</p>
+<p><b>Bombs</b> beat any play: four alike, then five alike, then a straight flush (five in a row in one suit), then six alike up to ten, and on top the four jokers. Between bombs, the bigger tier wins, then the higher rank.</p>
+<p><b>Rising.</b> The side whose player goes out first rises: three levels if his partner is out second, two if third, one if last. The other side stays where it is.</p>
+<p><b>Tribute.</b> From the second hand the last out gives the first out his highest card (never a ★); the first out gives back any card of 10 or lower. If one side went out first and second, both of the other side pay, the higher card to the first. Whoever paid leads. Holding both big jokers between them, the payers pay nothing, and the first out leads.</p>
+<p><b>Winning.</b> A match of six hands goes to the side with the higher level (another hand if they're level). Played to the ace, a side must win a hand at its own ace, its partner not last.</p>`;
+}
+
+// ---------- wiring ----------
+bindSwitcher($("appsBtn"), "tribute");
+document.querySelector(".tb-mark").innerHTML = APPS.find(a => a.id === "tribute")?.logo || "";
+$("menuBtn").addEventListener("click", openMenu);
+$("menuClose").addEventListener("click", () => $("menuDlg").close());
+$("whyClose").addEventListener("click", () => $("whyDlg").close());
+$("rushAgain").addEventListener("click", () => startRush());
+$("rushLeave").addEventListener("click", () => leaveRush());
+$("copyClose").addEventListener("click", () => $("copyDlg").close());
+$("whyDlg").addEventListener("click", e => { if (e.target === $("whyDlg")) $("whyDlg").close(); });
+$("helpBtn").addEventListener("click", () => { $("rulesBody").innerHTML = rules(); $("rulesDlg").showModal(); });
+
+// ---------- the course ----------
+// Learn (the Menu): Guan Dan taught from nothing (tribute-lessons.js) on the course's sheet (course.js), the cards drawn
+// as the table draws them and every answer the referee's; its last lesson starts a match.
+const course = createCourse({
+  id: "tribute", course: COURSE, cls: "tb", inFrame: IN_FRAME, stage: cardStage(),
+  onRules: () => { $("rulesBody").innerHTML = rules(); $("rulesDlg").showModal(); },
+  onPlay: () => {
+    if (together.room) { toast("Your table plays on: try a match when you're back to solo"); return; }
+    if (rush) leaveRush();
+    newMatch();
+  },
+});
+$("rulesClose").addEventListener("click", () => $("rulesDlg").close());
+$("nextBtn").addEventListener("click", nextHand);
+$("tableBtn").addEventListener("click", () => $("resultDlg").close());
+$("rulesDlg").addEventListener("click", e => { if (e.target === $("rulesDlg")) $("rulesDlg").close(); });
+onPause(() => { clearTimeout(timer); table3d?.hold(true); render(); }, () => { table3d?.hold(false); kick(0); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) together.resync(); });
+window.addEventListener("pageshow", e => { if (e.persisted) together.resync(); });
+let resizeTimer = null;
+// Korbi, 8 Nov 2026: turning the phone back upright left the page scrolled up under the status bar (the sideways layout is taller than
+// the upright one for a moment, and iOS keeps the offset), so the banner sat behind the island: every turn puts the page back at the top.
+const unscroll = () => { scrollTo(0, 0); for (const e of [document.scrollingElement, document.body, $("app")]) if (e && e.scrollTop) e.scrollTop = 0; };
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { unscroll(); render(); }, 60); setTimeout(unscroll, 350); });
+addEventListener("orientationchange", () => { unscroll(); setTimeout(unscroll, 350); });
+
+/** The view chosen in Menu: the cloth as it was (#table's seats), or the table tipped away in perspective (#board3d, tribute-3d.js).
+ *  Your cards, the coach's line and the buttons are the same elements in both; so is the table itself, so the header and the
+ *  levels go onto it in full screen as they always have. */
+function showView() {
+  const three = in3d();
+  $("app").classList.toggle("tb3", three);
+  $("board3d").hidden = !three;
+  table3d?.empty();
+  $("table").style.removeProperty("--tb-pf");
+}
+table3d = createTable3d({ G: () => G, me: () => me, nameOf, who, busy: () => busyWith, handId, acts: trickActs, news: newsLines, cardClass, quiet: IN_FRAME });
+showView();
+onDefaultChange(() => { if (!opts.view) { showView(); render(); } });   // Settings' 2D mode, live
+
+// for tests and debugging
+window.__tribute = { course, get state() { return G; }, get me() { return me; }, get together() { return together; }, get selected() { return [...selected]; },
+  get rush() { return rush; }, startRush, nextRush, leaveRush,
+  apply: (seat, a) => apply(seat, a), mine, newMatch, nextHand, select(ids) { selected.clear(); for (const id of ids) selected.add(id); render(); }, playSelected, pass, showHint,
+  get checks() { return C; }, get hint() { return hint; } };
+
+function load() {
+  const r = upgradeRush(read(RUSH, null));
+  if (r) { resumeRush(r); return; }
+  const run = read(RUN, null);
+  if (run?.G?.v === 1 && run?.S) {
+    G = E.fromRoom(run.G); S = run.S; C = run.C || []; me = 0;
+    closeDialogs();
+    gen++;
+    render();
+    kick(0);
+    return;
+  }
+  newMatch();
+}
+/** A rush left open: back where it was (an answer and its words kept), or its score if it was over. */
+async function resumeRush(r) {
+  await loadRush();
+  rush = r;
+  if (!rushPuzzle()) { leaveRush(); return; }
+  showRushPuzzle();
+  if (rush.over) endRush();
+}
+// Opened for a duo match: your solo match isn't dealt or played on while you sit down (its computer players would
+// move on without you); it waits as you left it, for Back to solo, or for a join that doesn't come off.
+const code = roomInAddress();
+if (code) {
+  joining = busy(joiningWords(), { delay: 0 });
+  together.join(code).then(ok => { if (!ok) { seated(); load(); } });
+} else load();

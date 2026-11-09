@@ -1,0 +1,238 @@
+/* Company (id quest): a Hanseatic chart table in woad blue, the League's dye. Everyone sits round the chart, you at the
+   foot; the five voyages are the legs of one route in the middle, with the refusals and the step; your role card, the
+   newest line said and your part under it (beside it, held sideways, with more of what's been said). The Company's hands
+   are verdigris and the Vitalians oxblood, as good and bad are everywhere in the suite: so are accusations (thumbs down)
+   and trust (thumbs up) at each player's foot. The Alderman holds the seal (brass), a vote is a pressed wax seal. */
+:root {
+  --qs-in: #3A4A96;                                              /* woad blue: the game's enamel */
+  --qs-soft: color-mix(in srgb, var(--qs-in) 14%, var(--sheet));
+  --qs-good: #2F7D5B; --qs-evil: #A8382B;
+  --qs-sea: color-mix(in srgb, var(--qs-in) 8%, var(--yard));
+  --qs-rhumb: color-mix(in srgb, var(--brass) 30%, transparent); /* a chart's rhumb lines and compass circle */
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --qs-in: #A9B6F0; --qs-good: #7FC2A8; --qs-evil: #E8806F; --qs-sea: color-mix(in srgb, var(--qs-in) 9%, var(--yard)); --qs-rhumb: color-mix(in srgb, var(--brass) 34%, transparent); }
+}
+html[data-mode="night"] { --qs-in: #A9B6F0; --qs-good: #7FC2A8; --qs-evil: #E8806F; --qs-sea: color-mix(in srgb, var(--qs-in) 9%, var(--yard)); --qs-rhumb: color-mix(in srgb, var(--brass) 34%, transparent); }
+/* Office lends it its own accent, as to its other games */
+html[data-theme="office"] { --qs-in: #0F6CBD; }
+html[data-theme="office"][data-mode="night"] { --qs-in: #479EF5; }
+
+.qs-mark { display: inline-block; }
+.qs-mark svg { width: 100%; height: 100%; display: block; }
+.qs-ico { display: inline-block; width: 1em; height: 1em; flex: none; vertical-align: -.14em; }
+
+/* ---------- the chart table: everyone round it, as large as the space allows ---------- */
+/* the board a container, so a tall phone's table stays nearly round rather than stretching to fill it */
+.qs-board { display: grid; place-items: center; min-height: 0; padding-top: .4rem; container-type: size; }
+.qs-ring { position: relative; isolation: isolate; width: 100%; height: min(100%, 130cqw); min-height: 0; container-type: size; border-radius: 50% / 46%; background: radial-gradient(ellipse at center, var(--qs-sea) 0 58%, transparent 72%); }
+/* the chart itself, in gradients only: rhumb lines (the compass rays of a portolan chart, sixteen of them) fanning round
+   the middle but never across the words in it, and the compass circle they come from */
+.qs-ring::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, var(--qs-rhumb) 0 .45deg, transparent .45deg 22.5deg);
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent 0 30%, #000 44% 54%, transparent 70%); mask-image: radial-gradient(ellipse at center, transparent 0 30%, #000 44% 54%, transparent 70%); }
+.qs-ring::after { content: ""; position: absolute; z-index: -1; pointer-events: none; left: 50%; top: 50%; height: 72%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%;
+  border: 1px solid var(--qs-rhumb); background: radial-gradient(closest-side, transparent calc(100% - .45rem), var(--qs-rhumb) calc(100% - .45rem) calc(100% - .45rem + 1px), transparent calc(100% - .45rem + 1px)); }
+/* a player: a name plate, engraved with a hairline inside its edge */
+.qs-chip { position: absolute; transform: translate(-50%, -50%); width: clamp(4.4rem, 23cqw, 8rem);
+  display: grid; justify-items: center; gap: .05em; padding: .3em .35em .32em; border: 1.5px solid var(--tile-edge); border-radius: 6px; background: var(--tile);
+  box-shadow: inset 0 0 0 2px var(--tile), inset 0 0 0 3px color-mix(in srgb, var(--brass) 38%, transparent);
+  color: var(--ink); font: inherit; font-size: clamp(.66rem, 3.3cqw, .95rem); line-height: 1.2; text-align: center; cursor: default; }
+.qs-chip:disabled { opacity: 1; }
+.qs-chip[aria-pressed], .qs-chip[aria-haspopup] { cursor: pointer; }
+.qs-chip.asked { border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass); }
+.qs-name { max-width: 100%; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qs-tag { display: inline-flex; align-items: center; gap: .2em; min-height: 1.15em; max-width: 100%; font-size: .78em; font-weight: 700; color: var(--ink-soft); white-space: nowrap; overflow: hidden; }
+.qs-chip.me { border-color: var(--brass); }
+.qs-chip.me .qs-name { text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: .18em; }
+.qs-chip.party { border-color: var(--qs-in); background: var(--qs-soft); box-shadow: inset 0 0 0 1px var(--qs-in); }
+.qs-chip.picked { border-color: var(--qs-in); background: var(--qs-in); color: var(--sheet); }
+.qs-chip.picked .qs-tag, .qs-chip.picked.evil .qs-tag { color: var(--sheet); }
+.qs-chip.turn { box-shadow: 0 0 0 2.5px var(--qs-in); }
+.qs-chip.evil .qs-tag { color: var(--qs-evil); }
+.qs-chip.side-good { background: color-mix(in srgb, var(--qs-good) 14%, var(--tile)); border-color: var(--qs-good); }
+.qs-chip.side-evil { background: color-mix(in srgb, var(--qs-evil) 14%, var(--tile)); border-color: var(--qs-evil); }
+.qs-chip.side-good .qs-tag { color: var(--qs-good); }
+.qs-chip.side-evil .qs-tag { color: var(--qs-evil); }
+.qs-chip.struck { box-shadow: 0 0 0 2.5px var(--qs-evil); }
+/* the marks on a player's corners: the Alderman's seal and the crew's pennant on the left, the vote on the right */
+.qs-lead { position: absolute; top: -1em; left: -.6em; display: grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--sheet); color: var(--brass); }
+.qs-lead .qs-ico { width: 1.5em; height: 1.5em; vertical-align: 0; }
+.qs-flag { position: absolute; top: -.8em; left: 1.2em; display: grid; place-items: center; width: 1.3em; height: 1.3em; border-radius: 50%; background: var(--sheet); border: 1.5px solid var(--qs-in); color: var(--qs-in); }
+.qs-flag .qs-ico { width: .85em; height: .85em; }
+/* a vote is a wax seal pressed on the plate: a drop of light on its crown, a darker rim, the mark inside */
+.qs-vote { position: absolute; top: -.85em; right: -.5em; display: grid; place-items: center; width: 1.4em; height: 1.4em; border-radius: 50%; color: var(--sheet);
+  box-shadow: inset 0 0 0 .12em rgba(0, 0, 0, .16), 0 1px 2px rgba(10, 18, 24, .3); }
+.qs-vote .qs-ico { width: .8em; height: .8em; vertical-align: 0; }
+.qs-vote.yes { background: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--qs-good) 68%, #fff) 0 16%, var(--qs-good) 58%, color-mix(in srgb, var(--qs-good) 76%, #000)); }
+.qs-vote.no { background: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--qs-evil) 68%, #fff) 0 16%, var(--qs-evil) 58%, color-mix(in srgb, var(--qs-evil) 76%, #000)); }
+.qs-vote.old { opacity: .5; }
+.qs-vote.done { width: .8em; height: .8em; top: -.35em; right: -.25em; background: var(--brass); border: 1.5px solid var(--sheet); box-shadow: none; }
+.qs-played { position: absolute; bottom: -.4em; right: -.3em; width: .7em; height: .95em; border-radius: 2px; background: var(--qs-in); border: 1.5px solid var(--sheet); }
+/* what's been said of a player, at their foot: how many accuse and trust them (yours ringed in brass); named as the
+   Lookout while the Vitalians confer */
+.qs-said { position: absolute; left: 50%; bottom: -.7em; transform: translateX(-50%); display: flex; gap: .2em; pointer-events: none; }
+.qs-said i { display: inline-flex; align-items: center; gap: .15em; height: 1.3em; padding: 0 .32em; border-radius: 3px; border: 1.5px solid var(--sheet);
+  color: var(--sheet); font-style: normal; font-size: .72em; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.qs-said i .qs-ico { width: 1em; height: 1em; vertical-align: 0; }
+.qs-said .acc { background: var(--qs-evil); }
+.qs-said .tru { background: var(--qs-good); }
+.qs-said .named { background: var(--ink); }
+.qs-said .mine { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass); }
+/* the one speaking, while their word is new */
+.qs-speak { position: absolute; top: -.85em; left: 50%; transform: translateX(-50%); display: grid; place-items: center; width: 1.45em; height: 1.25em; border-radius: 4px;
+  background: var(--brass); color: var(--sheet); animation: qs-speak .3s ease-out; }
+.qs-speak .qs-ico { width: .85em; height: .85em; }
+@keyframes qs-speak { from { transform: translateX(-50%) scale(.3); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .qs-speak { animation: none; } }
+
+/* ---------- the talk card: what's said of the player tapped, and your word of them ---------- */
+.qs-pop { position: absolute; z-index: 3; width: min(16rem, calc(100% - .5rem)); box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; padding: .55rem .6rem .6rem;
+  border: 1.5px solid var(--brass); border-radius: 6px; background: var(--sheet); color: var(--ink); box-shadow: 0 4px 16px rgba(10, 18, 24, .22); text-align: left; }
+.qs-pop[hidden] { display: none; }
+.qs-pop-name { font-size: .85rem; font-weight: 800; font-stretch: var(--wide); letter-spacing: calc(.1em * var(--track)); text-transform: var(--caps); }
+.qs-pop-said { color: var(--ink-soft); font-size: .82rem; line-height: 1.3; }
+.qs-pop-note { color: var(--ink-soft); font-size: .75rem; text-align: center; }
+.qs-pop-btns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .4rem; }
+.qs-pop-btns.one { grid-template-columns: minmax(0, 1fr); }
+.qs-pop-btns .btn { display: inline-flex; align-items: center; justify-content: center; gap: .35rem; min-width: 0; min-height: 2.6rem; margin: 0; padding-inline: .4rem; }
+.qs-say.acc .qs-ico { color: var(--qs-evil); }
+.qs-say.tru .qs-ico { color: var(--qs-good); }
+.qs-say.acc[aria-pressed="true"] { background: var(--qs-evil); border-color: var(--qs-evil); color: var(--sheet); }
+.qs-say.tru[aria-pressed="true"] { background: var(--qs-good); border-color: var(--qs-good); color: var(--sheet); }
+.qs-say[aria-pressed="true"] .qs-ico { color: inherit; }
+
+/* ---------- the middle: the route, the refusals, the step ---------- */
+.qs-centre { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 50cqw; max-height: 60cqh; display: grid; justify-items: center; align-content: center; gap: .45em;
+  font-size: clamp(.68rem, 3.5cqw, 1.05rem); text-align: center; }
+.qs-lead-in { margin: 0; color: var(--ink-soft); }
+/* the five voyages, the legs of one route: a plate on each with the crew's size, a port between one leg and the next */
+.qs-track { display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.qs-disc { position: relative; display: grid; place-items: center; width: 1.95em; height: 2.05em; border-radius: 4px; border: 1.5px solid var(--brass); background: var(--sheet);
+  box-shadow: inset 0 0 0 2px var(--sheet), inset 0 0 0 3px color-mix(in srgb, var(--brass) 45%, transparent);
+  font-weight: 800; font-size: 1.05em; font-variant-numeric: tabular-nums; }
+.qs-disc.now { border-color: var(--qs-in); box-shadow: 0 0 0 2px var(--qs-in); }
+.qs-disc.success { background: var(--qs-good); border-color: var(--qs-good); color: var(--sheet); box-shadow: none; }
+.qs-disc.fail { background: var(--qs-evil); border-color: var(--qs-evil); color: var(--sheet); box-shadow: none; }
+.qs-disc .qs-ico { width: 1.1em; height: 1.1em; }
+.qs-port { position: relative; flex: none; width: .75em; height: .5em; }
+.qs-port::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1.5px dashed color-mix(in srgb, var(--brass) 75%, transparent); }
+.qs-port::after { content: ""; position: absolute; left: 50%; top: 50%; width: .36em; height: .36em; border-radius: 50%; transform: translate(-50%, -50%); background: var(--sheet); border: 1.5px solid var(--brass); box-sizing: border-box; }
+.qs-port.sailed::before { border-top-style: solid; }
+.qs-port.sailed::after { background: var(--brass); }
+.qs-two, .qs-fails { position: absolute; right: -.4em; bottom: -.4em; display: grid; place-items: center; min-width: 1.15em; height: 1.15em; border-radius: 50%; font-style: normal; font-size: .62em; font-weight: 800; }
+.qs-two { background: var(--qs-evil); color: var(--sheet); }
+.qs-fails { background: var(--sheet); color: var(--qs-evil); border: 1.5px solid var(--qs-evil); }
+/* the refusals, five knots on a line: the fifth is the one that closes the season */
+.qs-refused { display: flex; align-items: center; gap: .5em; font-size: .78em; color: var(--ink-soft); }
+.qs-refused > span:first-child { font-weight: 800; font-stretch: var(--wide); letter-spacing: calc(.1em * var(--track)); text-transform: var(--caps); font-size: .9em; }
+.qs-knots { position: relative; display: flex; align-items: center; gap: .35em; }
+.qs-knots::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1.5px solid color-mix(in srgb, var(--brass) 60%, transparent); }
+.qs-knots i { position: relative; width: .72em; height: .72em; border-radius: 50%; border: 1.5px solid var(--brass); box-sizing: border-box; background: var(--sheet); }
+.qs-knots i.last { border-color: var(--qs-evil); }
+.qs-knots i.on { background: var(--qs-evil); border-color: var(--qs-evil); }
+/* a fixed height, so the route above never moves as the step changes */
+.qs-now { display: grid; justify-items: center; gap: .15em; height: 5.4em; align-content: center; }
+.qs-now small { color: var(--ink-soft); font-size: .82em; }
+.qs-now b { line-height: 1.25; }
+.qs-big { font-size: 1.2em; }
+.qs-big.good { color: var(--qs-good); }
+.qs-big.evil { color: var(--qs-evil); }
+.qs-cards { display: flex; gap: .3em; }
+.qs-card { display: grid; place-items: center; width: 1.7em; height: 2.3em; border-radius: 4px; color: var(--sheet); animation: qs-turn .35s ease-out backwards; }
+.qs-card:nth-child(2) { animation-delay: .12s; } .qs-card:nth-child(3) { animation-delay: .24s; } .qs-card:nth-child(4) { animation-delay: .36s; } .qs-card:nth-child(5) { animation-delay: .48s; }
+.qs-card.ok { background: var(--qs-good); }
+.qs-card.bad { background: var(--qs-evil); }
+@keyframes qs-turn { from { transform: rotateY(90deg); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .qs-card { animation: none; } }
+.qs-bar { display: block; width: 8em; height: .3em; margin-top: .2em; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.qs-bar i { display: block; height: 100%; background: var(--qs-in); transform-origin: left; }
+
+/* ---------- your role and your part ---------- */
+.qs-side { display: flex; flex-direction: column; gap: .4rem; padding-top: .35rem; }
+.qs-role { display: flex; align-items: center; gap: .6rem; width: 100%; min-height: 3.4rem; padding: .4rem .65rem; border: 1.5px solid var(--tile-edge); border-radius: 6px; background: var(--tile);
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.qs-role.good { border-color: var(--qs-good); background: color-mix(in srgb, var(--qs-good) 10%, var(--tile)); }
+.qs-role.evil { border-color: var(--qs-evil); background: color-mix(in srgb, var(--qs-evil) 10%, var(--tile)); }
+.qs-role .qs-role-ico { width: 1.9rem; height: 1.9rem; }
+.qs-role.good .qs-role-ico { color: var(--qs-good); }
+.qs-role.evil .qs-role-ico { color: var(--qs-evil); }
+.qs-hidden-ico { display: inline-block; flex: none; border-radius: 4px; background: repeating-linear-gradient(45deg, var(--brass) 0 2px, transparent 2px 6px); opacity: .6; }
+.qs-role-text { display: grid; gap: .05rem; min-width: 0; }
+.qs-role-text b { font-size: .95rem; }
+.qs-role-text small { font-size: .78rem; line-height: 1.3; color: var(--ink-soft); }
+/* the newest line said, the narrator's or a player's; older ones only held sideways */
+.qs-status { height: 2.5em; line-height: 1.25; text-align: center; color: var(--ink-soft); font-size: .85rem; overflow: hidden; }
+.qs-status p { margin: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.qs-status .qs-old { display: none; }
+.qs-status b { color: var(--ink); font-weight: 800; }
+.qs-status .talk { color: var(--ink); }
+.qs-controls { display: grid; gap: .35rem; }
+.qs-hint { margin: 0; min-height: 1.3em; text-align: center; font-weight: 700; font-size: .9rem; }
+.qs-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.qs-pair .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 3rem; }
+.qs-vote-btn[aria-pressed="true"].yes { background: var(--qs-good); border-color: var(--qs-good); color: var(--sheet); }
+.qs-vote-btn[aria-pressed="true"].no { background: var(--qs-evil); border-color: var(--qs-evil); color: var(--sheet); }
+.qs-card-btn[aria-pressed="true"] { outline: 2.5px solid var(--qs-in); outline-offset: 2px; }
+.qs-card-btn.fail:disabled { opacity: .4; }
+.qs-go { width: 100%; min-height: 3rem; }
+/* leading: Talk beside Send this crew */
+.qs-lead-go { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .4rem; }
+.qs-lead-go .btn { min-height: 3rem; margin: 0; padding-inline: 1rem; }
+.qs-talk-btn[aria-pressed="true"] { border-color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass); }
+
+/* ---------- the sheets ---------- */
+.qs-rules p { line-height: 1.45; }
+.qs-rules h3 { margin: 1rem 0 .4rem; font-size: .8rem; font-stretch: var(--wide); letter-spacing: calc(.12em * var(--track)); text-transform: var(--caps); color: var(--brass-lo); }
+.qs-role-line { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr); gap: .5rem; align-items: start; }
+.qs-role-line > .qs-ico { width: 1.4rem; height: 1.4rem; color: var(--qs-in); }
+.qs-sizes { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; text-align: center; }
+.qs-sizes th { padding: .25rem; font-size: .7rem; color: var(--ink-soft); font-weight: 800; }
+.qs-sizes td { padding: .3rem .2rem; border-top: 1px solid var(--rule); }
+.qs-sizes td.n { font-weight: 800; color: var(--qs-in); }
+.qs-rules-note { font-size: .85rem; color: var(--ink-soft); }
+.qs-log-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+.qs-log-list li { display: grid; gap: .2rem; padding: .5rem .2rem; border-bottom: 1px solid var(--rule); border-left: 3px solid var(--rule); padding-left: .55rem; }
+.qs-log-list li.success { border-left-color: var(--qs-good); }
+.qs-log-list li.fail { border-left-color: var(--qs-evil); }
+.qs-log-head { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.qs-log-head b { font-size: .75rem; font-stretch: var(--wide); letter-spacing: calc(.1em * var(--track)); text-transform: var(--caps); color: var(--brass-lo); }
+.qs-log-votes { display: grid; gap: .1rem; font-size: .85rem; }
+.qs-log-votes .y .qs-ico { color: var(--qs-good); margin-right: .3rem; }
+.qs-log-votes .n .qs-ico { color: var(--qs-evil); margin-right: .3rem; }
+.qs-log-out { font-size: .82rem; color: var(--ink-soft); font-weight: 700; }
+.qs-log-list li.qs-log-talk { display: block; padding: .2rem .2rem .2rem .55rem; border-bottom: 0; border-left-color: transparent; font-size: .85rem; line-height: 1.35; color: var(--ink-soft); }
+.qs-log-talk b { color: var(--ink); }
+.qs-end-head { margin: .2rem 0 .4rem; }
+.qs-end-note { color: var(--ink-soft); font-size: .92rem; margin: 0 0 .5rem; }
+.qs-standings { list-style: none; margin: 0; padding: 0; display: grid; gap: .1rem; }
+.qs-standings li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr) auto; gap: .55rem; align-items: center; padding: .4rem .2rem; border-bottom: 1px solid var(--rule); }
+.qs-standings li > .qs-ico { width: 1.2rem; height: 1.2rem; }
+.qs-standings li.good > .qs-ico, .qs-standings li.good b { color: var(--qs-good); }
+.qs-standings li.evil > .qs-ico, .qs-standings li.evil b { color: var(--qs-evil); }
+.qs-standings li .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qs-standings li.won .nm::after { content: " ★"; color: var(--qs-in); }
+.qs-standings li.me .nm { text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: .2em; }
+.qs-end-go { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .8rem; }
+.qs-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translate(-50%, 1rem); opacity: 0; pointer-events: none;
+  max-width: min(90vw, 26rem); padding: .55rem .9rem; border-radius: 6px; background: var(--plate); color: var(--plate-ink); font-weight: 700; text-align: center;
+  transition: opacity .2s, transform .2s; z-index: 5; }
+.qs-toast.on { opacity: 1; transform: translate(-50%, 0); }
+html[data-theme="office"] :is(.qs-chip, .qs-role, .qs-card, .qs-pop, .qs-disc) { border-radius: 4px; }
+
+/* a short phone: the role card gives way first (what's said stays: it's half the game) */
+@media (max-height: 640px) and (orientation: portrait) {
+  .qs-role { min-height: 2.8rem; padding: .3rem .55rem; }
+  .qs-role-text small { display: none; }
+}
+
+/* held sideways: the table on the left, your role and your part beside it, the buttons low */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.quest { --beside: 21rem; grid-template-rows: auto minmax(0, 1fr); }
+  #app.quest .qs-board { grid-column: 1; grid-row: 2; }
+  #app.quest .qs-side { grid-column: 2; grid-row: 2; min-height: 0; justify-content: flex-end; padding-bottom: .4rem; }
+  /* what's been said, as much as the column holds, the newest last; the oldest fade at the top */
+  #app.quest .qs-status { flex: 1 1 auto; height: auto; min-height: 2.5em; display: flex; flex-direction: column; justify-content: flex-end; gap: .4em; text-align: left;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 3em); mask-image: linear-gradient(to bottom, transparent, #000 3em); }
+  #app.quest .qs-status .qs-old { display: flex; flex-direction: column; justify-content: flex-end; gap: .4em; min-height: 0; opacity: .72; }
+}

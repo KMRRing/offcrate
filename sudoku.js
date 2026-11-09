@@ -1,0 +1,908 @@
+// Nonet (October 2026): fill the grid so every row, column and region holds each digit once. The rules, the grids
+// and the solvers are sudoku-engine.js and its pieces (every grid is generated, has one solution, and is graded by the
+// hardest technique a person needs); the board is the digit grid (digits.js), which Calcudoku and Tally share. This
+// file keeps the run (your entries, the clock, hints) and the table: a race on one grid, or Together, the givens shared out so nobody can finish alone.
+import { RULES, SIZES, LEVELS, DAILY, levelsOf, levelFor, decode, validGrid, shapeFor, viewOf } from "./sudoku-engine.js";
+import { stateOf, nextStep, say } from "./sudoku-logic.js";
+import { boxRegions, bit } from "./sudoku-grid.js";
+import { createBoard } from "./digits.js";
+import { desk3d, deskView } from "./desk3d.js";
+import { freshEntries, validEntries, write as writeDigit, pencil, rub, fill, set, undo, redo, repeats } from "./digits-edit.js";
+import { coopOf, placeCoop, hintCoop, coopValues, shareOf, orphanShares, placedBy as placedBySeat } from "./sudoku-room.js";
+import { createDuel } from "./duel.js";
+import { presentSlots, runOf } from "./duel-core.js";
+import { branchPath } from "./rooms.js";
+import { bindSwitcher, APPS } from "./apps.js";
+import "./pwa.js";
+import { part, choice, toggle, action, line, onPause, isPaused, todayPart } from "./menu.js";
+import { ramp } from "./ramp.js";
+import { rungs, startFor, split } from "./ramp-steps.js";
+import { today, noteDayTime, arrivedForToday, IN_FRAME, reportDuo } from "./suite.js";
+import { roundOver } from "./random.js";
+import { busy } from "./loading.js";
+import { sure } from "./sure.js";
+import { tallyEdit, onceEdit } from "./board-share.js";
+import { recordEdits, cursorsOf as partnerCursors } from "./digits-coop.js";
+import sudokuCoop from "./sudoku-coop.js";
+
+
+const $ = id => document.getElementById(id);
+// the board as a slab on a desk (desk3d.js), or flat: the player's choice, else the suite's default (battery saver: flat)
+const deskChoice = deskView("sudoku"), desk = desk3d($("stage"), $("board"));
+const showDesk = () => desk.set(deskChoice.get() === "desk");
+showDesk();
+deskChoice.watch(showDesk);
+let glinted = null;
+const RUN = "sudoku:run", SETTINGS = "sudoku:settings", TIMES = "sudoku:times", SPARES = "sudoku:spares", TOGETHER = "sudoku:together";
+const HINT = 30;                     // seconds a hint adds
+const SAVE_EVERY = 5000;             // ms between saves while the clock runs (a partner watching sees it that often)
+const LEND_AFTER = 20000;            // ms a share of the givens goes unheld (its player away) before the others see it
+
+// ---------- played with a partner ----------
+// A party of two opened this page (&coop=1, docs/coop.md): the grid is the room's, one grid for two phones, every given seen by both
+// (not Together's, below, where the givens are shared out), and what this file does to it goes through `coop.edit` as edits instead
+// of a change to S.entries. S is then built from the room's board each time it moves (showBoard); selection, the Notes switch,
+// undo, redo and a hint's gilt stay each player's own. The clock is the team's.
+const COOP = !IN_FRAME && /[?&]coop=1\b/.test(location.search) && /[?&]room=[A-Za-z]{4}\b/.test(location.search);
+let coop = null;                       // coop-page.js's controller once the room's board is on the screen
+let coopHost = false, team = null, sentDone = false;     // this phone is the host's; the board's start ({ at, ms, hints }); the solve is on its way
+const teamMs = () => (team ? (team.ms || 0) + Math.max(0, Date.now() - team.at) : 0);
+const hintId = () => `h${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
+const write = (key, v) => { if (IN_FRAME) return; try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* private mode */ } };
+const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const fmt = secs => { const s = Math.max(0, Math.round(secs)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, p = x => String(x).padStart(2, "0"); return h ? `${h}:${p(m)}:${p(s % 60)}` : `${m}:${p(s % 60)}`; };
+const first = name => String(name || "Player").split(" ")[0];
+
+// ---------- settings: what the next grid deals, and how play goes ----------
+const DEFAULTS = { rules: "classic", size: 9, level: "medium", repeats: true, tidy: true };
+let settings = { ...DEFAULTS, ...read(SETTINGS, {}) };
+if (!RULES[settings.rules]) settings.rules = "classic";
+if (!SIZES[settings.size]) settings.size = 9;
+settings.level = levelFor(settings.rules, settings.size, LEVELS[settings.level] ? settings.level : "medium");
+const saveSettings = () => write(SETTINGS, settings);
+// Korbi, 4 November 2026: the menu is the minimum it needs to be. Size and level are one hidden ramp for each kind of grid, its
+// first rung the old saved choice; the ladder steps up after a grid solved without a hint. Tidy notes are fixed.
+settings.tidy = true;
+delete settings.computer;      // the computer partner was removed (Korbi, 7 November 2026); its saved choices go with it
+delete settings.pace;
+const OLD = { size: settings.size, level: settings.level };
+const RUNGS = Object.fromEntries(Object.keys(RULES).map(r => [r, rungs([6, 9], Object.keys(LEVELS), (n, l) => !!levelsOf(r, n)[l])]));
+/** The size and level the next grid of these rules deals. */
+const rungNow = () => {
+  const list = RUNGS[settings.rules];
+  const { size, level } = split(ramp("sudoku", list, { id: settings.rules, start: startFor(list, [6, 9], Object.keys(LEVELS), OLD.size, OLD.level) }));
+  return { size: Number(size), level };
+};
+const kindKey = k => `${k.rules}:${k.size}:${k.level}`;
+const kindName = k => `${RULES[k.rules].label}${Number(k.size) === 6 ? " 6×6" : ""} · ${LEVELS[k.level].label}`;
+
+// ---------- dealing: grids are made in a worker (a hard one takes a phone a few seconds) ----------
+let worker = null, workerless = false, asked = 0;
+const waiting = new Map();
+async function ask(job) {
+  const local = async () => {
+    const E = await import("./sudoku-engine.js");
+    return job.kind === "grid" ? { grid: E.encode(E.generate(job)) } : { split: E.splitFor(E.decode(job.grid), job.k, job.seed) };
+  };
+  if (workerless) return local();
+  try {
+    worker ||= new Worker(new URL("./sudoku-worker.js", import.meta.url), { type: "module" });
+    worker.onmessage = e => { const w = waiting.get(e.data.id); waiting.delete(e.data.id); if (w) (e.data.error ? w.fail(e.data.error) : w.done(e.data)); };
+    worker.onerror = () => { workerless = true; worker = null; for (const w of waiting.values()) w.local(); waiting.clear(); };
+  } catch { workerless = true; return local(); }
+  const id = ++asked;
+  return new Promise((done, fail) => {
+    waiting.set(id, { done, fail, local: () => local().then(done, fail) });
+    worker.postMessage({ id, ...job });
+  });
+}
+const gridOf = async kind => (await ask({ kind: "grid", seed: kind.seed ?? randomSeed(), rules: kind.rules, size: kind.size, level: kind.level })).grid;
+/** A spare grid of each kind is kept, made in the background, so New grid is at once even for an Expert. */
+function takeSpare(kind) {
+  const all = read(SPARES, {}), spare = all[kindKey(kind)];
+  if (!spare || !validGrid(spare)) return null;
+  delete all[kindKey(kind)];
+  write(SPARES, all);
+  return spare;
+}
+let refilling = false;
+function refill(kind) {
+  if (refilling || IN_FRAME || read(SPARES, {})[kindKey(kind)]) return;
+  refilling = true;
+  gridOf(kind).then(g => { const all = read(SPARES, {}); all[kindKey(kind)] = g; write(SPARES, all); }).catch(e => console.error(e)).finally(() => { refilling = false; });
+}
+/** A new grid of this kind: the spare (at once), else made now with the mark showing. */
+async function dealGrid(kind, words = "Setting the grid") {
+  const spare = kind.seed == null ? takeSpare(kind) : null, next = { rules: kind.rules, size: kind.size, level: kind.level };
+  if (spare) { setTimeout(() => refill(next), 1500); return spare; }
+  const done = busy(words, { delay: 200 });
+  try { return await gridOf(kind); } finally { done(); setTimeout(() => refill(next), 1500); }
+}
+
+// ---------- the run (solo) ----------
+// S: { v, mode ("random", "daily"), grid (encoded), entries (digits-edit.js), sel, notes (the Notes
+// switch), ms (time on screen), hints, wrong (cells a hint marked wrong), done ({ ms, score, at, fresh }) }
+let S = null, P = null, SH = null, board = null, boardFor = "";
+let clockFrom = null, savedAt = 0, message = null, hintShown = null, highlight = 0, flash = null;
+const solo = () => !M;
+
+function setGrid(grid) {
+  P = decode(grid);
+  SH = shapeFor(P);
+}
+function begin(s) {
+  S = s;
+  if (S.mode === "rival" || S.mode === "pair") S.mode = "random";         // a run saved when the computer could race you or hold half the givens (Korbi, 7 November 2026: no computer partner); its digits are now yours
+  setGrid(S.grid);
+  message = null; hintShown = null; highlight = 0; flash = null;
+  clockFrom = null;
+  if (!IN_FRAME) history.replaceState(null, "", `${location.search}${hashFor(S)}`);
+  soloBoard();
+  save();
+  clockRun();
+  render();
+}
+const fresh = (grid, mode, extra = {}) => ({ v: 1, mode, grid, entries: freshEntries(grid.n * grid.n), sel: -1, notes: false, ms: 0, hints: 0, wrong: [], done: null, ...extra });
+/** A new solo grid: today's, or a random one of the settings' kind. */
+async function start(mode = "random") {
+  if (COOP) {       // another grid for both of you
+    if (!coop) return;
+    let grid;
+    try { grid = await dealGrid({ rules: settings.rules, ...rungNow() }); }
+    catch (e) { console.error(e); toast("Couldn't make a grid, try again"); return; }
+    await coop.renew(coopShare(fresh(grid, "random")));
+    return;
+  }
+  const daily = mode === "daily";
+  const kind = daily ? { ...DAILY, seed: today() } : { rules: settings.rules, ...rungNow() };
+  let grid;
+  try { grid = await dealGrid(kind, daily ? "Setting today's grid" : "Setting the grid"); }
+  catch (e) { console.error(e); toast("Couldn't make a grid, try again"); return; }
+  if (M) return;                                     // sat down at a table meanwhile
+  begin(fresh(grid, daily ? "daily" : "random"));
+}
+/** The shared board for a grid (what the host's run becomes when a partner joins). */
+const coopShare = run => sudokuCoop.share({ [RUN]: JSON.stringify(run) });
+// in a co-op the history is only yours: the grid is started when anything is on it
+const startedSolo = () => !!S && !S.done && (COOP ? S.entries.v.some(Boolean) || S.hints > 0 : S.entries.past.length > 0 || S.hints > 0);
+async function confirmStart(mode) {
+  if (startedSolo() && !(await sure(coop ? "Start a new grid for both of you? This one isn't finished." : "Start a new grid? This one isn't finished.", { yes: "New grid" }))) return false;
+  start(mode);
+  return true;
+}
+function save() {
+  if (IN_FRAME || !S) return;
+  if (COOP) {       // the host's own run follows the shared board (it is theirs again when the co-op ends); the guest's is left alone
+    if (coopHost) write(RUN, { ...S, entries: { ...S.entries, past: [], future: [] }, ms: Math.round(teamMs()) });
+    return;
+  }
+  write(RUN, S);
+  savedAt = performance.now();
+}
+const validRun = s => !!s && s.v === 1 && validGrid(s.grid) && validEntries(s.entries, s.grid.n * s.grid.n) && Number.isFinite(s.ms);
+const hashFor = s => (s.mode === "daily" ? `#d=${s.grid.seed}` : `#s=${s.grid.seed}&r=${s.grid.rules}&z=${s.grid.n}&l=${s.grid.level}`);
+function hashKind() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("d")) return { mode: "daily", seed: Number(h.get("d")), ...DAILY };
+  const seed = Number(h.get("s")), rules = h.get("r"), size = Number(h.get("z")), level = h.get("l");
+  return seed && RULES[rules] && SIZES[size] && LEVELS[level] ? { mode: "random", seed, rules, size, level: levelFor(rules, size, level) } : null;
+}
+
+// ---------- the clock: time on screen, standing still while the menu is open ----------
+function clockRun() {
+  if (COOP || IN_FRAME || !solo() || !S || S.done || clockFrom != null || document.hidden || isPaused()) return;
+  clockFrom = performance.now();
+}
+function clockPause() {
+  if (clockFrom == null) return;
+  S.ms += performance.now() - clockFrom;
+  clockFrom = null;
+  save();
+}
+onPause(() => { clockPause(); render(); }, () => { clockRun(); render(); });
+const soloMs = () => (COOP ? teamMs() : S ? S.ms + (clockFrom != null ? performance.now() - clockFrom : 0) : 0);
+
+// ---------- what the board shows ----------
+/** The cells a player holds the given of (1), can't see (sealed: 2), or that were lent while their player is away (3). */
+function seenGivens(split, mine, lent = []) {
+  const n = P.n * P.n, out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!P.givens[i]) continue;
+    const who = split ? split[i] : "*";
+    out[i] = who === "*" || who === String(mine) ? 1 : lent.includes(Number(who)) ? 3 : 2;
+  }
+  return out;
+}
+/** Which Killer sums a player sees: every one solo; at a table, theirs, the shared ones and those lent to them. */
+const sumsSeen = (split, mine, lent = []) => P.cages.map((c, i) => !split || split[i] === "*" || split[i] === String(mine) || lent.includes(Number(split[i])));
+
+/** The view of a grid for the board, from its parts: values, fixed, sealed, lent, notes, owners. */
+function viewFrom({ placed, notes, split, mine, lent, owners }) {
+  const cells = P.n * P.n, seen = P.cages ? null : seenGivens(split, mine, lent);
+  const values = new Array(cells), fixed = new Array(cells), sealed = new Set(), lentCells = new Set();
+  for (let i = 0; i < cells; i++) {
+    const g = seen?.[i];
+    if (g === 1 || g === 3) { values[i] = P.givens[i]; fixed[i] = true; if (g === 3) lentCells.add(i); }
+    else { values[i] = g === 2 ? 0 : placed[i] || 0; fixed[i] = false; if (g === 2) sealed.add(i); }
+  }
+  return { values, fixed, sealed, lent: lentCells, notes, owners };
+}
+/** The units a digit may not repeat in: rows, columns, regions (diagonals in Diagonals) and Killer's cages. */
+const unitsForRepeats = () => [...SH.units, ...(P.cages || []).map(c => c.cells)];
+const writable = (view, i) => !view.fixed[i] && !view.sealed.has(i);
+
+const soloView = () => viewFrom({ placed: S.entries.v, notes: S.entries.n, split: null, mine: 0, owners: null });
+
+// ---------- the board ----------
+/** The board for your own grid. */
+const soloBoard = () => makeBoard();
+function makeBoard(sumsVisible = null, key = "") {
+  const id = `${P.seed}/${P.rules}/${P.n}/${key}`;
+  if (board && boardFor === id) return;
+  board?.destroy();
+  boardFor = id;
+  const n = P.n, seen = sumsVisible || (P.cages ? P.cages.map(() => true) : null);
+  board = createBoard($("board"), {
+    rows: n, cols: n, digits: Array.from({ length: n }, (_, i) => i + 1),
+    regions: P.regions || boxRegions(n),
+    cages: P.cages ? P.cages.map((c, i) => ({ cells: c.cells, label: seen[i] ? c.sum : "?" })) : [],
+    diagonals: P.rules === "x",
+    peers: i => [...SH.peers[i]],
+    pad: $("pad"),
+    tools: ["undo", "redo", "erase", "notes", { id: "hint", label: "Hint", note: `+${HINT} s` }],
+    onInput,
+    name: "Nonet grid",
+  });
+}
+
+// ---------- input ----------
+function onInput(a) {
+  if (IN_FRAME) return;
+  if (M) { matchInput(a); return; }
+  if (!S || S.done || isPaused()) return;
+  const view = soloView();
+  if (a.type !== "select" && a.type !== "notes") { hintShown = null; message = null; }
+  switch (a.type) {
+    case "select": S.sel = a.cell; highlight = 0; if (hintShown && !hintShown.cells.includes(a.cell)) hintShown = null; shareCursor(); break;
+    case "notes": S.notes = !S.notes; break;
+    case "digit": {
+      const i = S.sel;
+      if (i < 0 || !writable(view, i)) { highlight = highlight === a.value ? 0 : a.value; break; }
+      const changed = a.note ? pencil(S.entries, i, a.value) : writeDigit(S.entries, i, a.value, { clear: settings.tidy ? [...SH.peers[i]] : [] });
+      if (changed && !a.note && S.entries.v[i]) { S.wrong = S.wrong.filter(c => c !== i); unitsDone(i); }
+      if (changed) sendMove();
+      break;
+    }
+    case "erase": if (S.sel >= 0 && writable(view, S.sel)) { if (rub(S.entries, S.sel)) sendMove(); } break;
+    case "undo": if (coop) stepCoop(-1); else undo(S.entries); break;
+    case "redo": if (coop) stepCoop(1); else redo(S.entries); break;
+    case "tool": if (a.id === "hint") soloHint(); break;
+  }
+  checkDone();
+  save();
+  render();
+}
+/** Co-op: the move you just made (the last in your history) goes to the room; the board then shows the room's grid with it. */
+function sendMove(extra = []) {
+  if (!coop) return;
+  const rec = S.entries.past.at(-1);
+  coop.edit([...recordEdits(rec, P.n), ...extra]);
+}
+/** Co-op: your undo and redo are your own moves again, an undo leaving what your partner has changed since. */
+function stepCoop(dir) {
+  const e = S.entries, rec = dir < 0 ? e.past.pop() : e.future.pop();
+  if (!rec) return;
+  (dir < 0 ? e.future : e.past).push(rec);
+  coop.edit(recordEdits(rec, P.n, { back: dir < 0, weak: dir < 0 }));
+}
+/** A unit that's just been filled sweeps with light (whether it's right or not: the sweep tells nothing). */
+function unitsDone(i) {
+  const v = M ? matchView() : soloView();
+  const full = SH.unitsOf[i].filter(u => [...SH.units[u]].every(c => v.values[c] || v.sealed.has(c)));
+  if (full.length) flash = { key: `${i}:${Date.now()}`, cells: [...new Set(full.flatMap(u => [...SH.units[u]]))] };
+}
+function checkDone() {
+  if (!S || S.done) return;
+  const v = S.entries.v, cells = P.n * P.n;
+  for (let i = 0; i < cells; i++) if ((P.givens[i] || v[i]) !== P.solution[i]) {
+    if ([...Array(cells).keys()].every(c => P.givens[c] || v[c])) message = { text: `Every cell is filled, but some digits aren't right. Hint shows one (+${HINT} s).`, tone: "bad" };
+    return;
+  }
+  if (coop) finishCoop(); else finishSolo();
+}
+/** Co-op: the solve is the room's, set once by whoever's phone sees the grid right first, and the same time and score on both. */
+function finishCoop() {
+  if (S.done || sentDone || !coop) return;
+  sentDone = true;
+  const ms = Math.round(teamMs());
+  coop.edit(onceEdit("done", { ms, score: Math.round(ms / 1000) + HINT * S.hints, by: coop.together.room?.name || "" }));
+}
+function finishSolo() {
+  if (clockFrom != null) { S.ms += performance.now() - clockFrom; clockFrom = null; }
+  const score = Math.round(S.ms / 1000) + HINT * S.hints;
+  S.done = { ms: Math.round(S.ms), score, at: Date.now() };
+  const times = read(TIMES, {}), key = kindKey({ rules: P.rules, size: P.n, level: P.level });
+  S.done.fresh = times[key] == null || score < times[key];
+  if (S.done.fresh) { times[key] = score; write(TIMES, times); }
+  if (S.mode === "random") { rungNow(); ramp.won(!S.hints); }
+  if (S.mode === "daily") noteDayTime("sudoku", score, P.seed);       // today's grid: the first solve, time and hints
+  flash = { key: `done:${S.done.at}`, cells: [...Array(P.n * P.n).keys()] };
+  hintShown = null;
+  save();
+  roundOver("sudoku");
+}
+
+// ---------- hints: the next step, named, on the board ----------
+/**
+ * A hint costs 30 s. A wrong digit comes first (logic from a wrong grid leads nowhere), then pencil marks that leave
+ * out the digit a cell needs, then the easiest step from the grid as it stands, your pencil marks counted where you've
+ * made them: named, its cells lit, and its target picked out (a digit's cell selected, so you write it yourself).
+ */
+function hintFor({ view, placed, notes, solutionAt }) {
+  const cells = P.n * P.n;
+  const wrong = [...Array(cells).keys()].filter(i => placed[i] && writable(view, i) && placed[i] !== solutionAt(i));
+  if (wrong.length) return { cells: wrong, focus: [wrong[0]], wrong, text: wrong.length > 1 ? `${plural(wrong.length, "digit")} aren't right: they're struck through.` : "This digit isn't right." };
+  const bad = [...Array(cells).keys()].filter(i => !view.values[i] && !view.sealed.has(i) && notes[i] && !(notes[i] & bit(solutionAt(i))));
+  if (bad.length) return { cells: bad, focus: [bad[0]], text: "Your pencil marks here leave out the digit this cell needs." };
+  // the marks were just checked to hold each cell's digit, so narrowing to them leaves every cell something
+  const values = Uint8Array.from(view.values), st = stateOf(view.shape, values);
+  for (let i = 0; i < cells; i++) if (!values[i] && notes[i]) st.cand[i] &= notes[i];
+  const step = nextStep(view.shape, st, { upTo: 4 });
+  if (!step) return null;
+  const focus = step.place ? [step.place[0]] : [...new Set(step.elim.map(([c]) => c))];
+  return { cells: step.cells || focus, focus, step, text: `${say(view.shape, step)}` };
+}
+function soloHint() {
+  const view = soloView();
+  const h = hintFor({ view: { ...view, shape: SH }, placed: S.entries.v, notes: S.entries.n, solutionAt: i => P.solution[i] });
+  if (!h) { message = { text: "Nothing more to find here.", tone: "" }; return; }
+  // in a co-op the hint is counted once for both of you (a tally, whoever asked), with the pencil marks it struck, in one change
+  const edits = [];
+  if (coop) edits.push(tallyEdit("hints", hintId())); else S.hints++;
+  showHint(h, S, view, strike => { if (set(S.entries, strike) && coop) edits.push(...recordEdits(S.entries.past.at(-1), P.n)); });
+  if (coop) coop.edit(edits);
+}
+/** Puts a hint on the board: its cells lit, its target selected; eliminations struck from your pencil marks there. */
+function showHint(h, run, view, strikeNotes) {
+  hintShown = h;
+  if (h.wrong) run.wrong = h.wrong;
+  if (h.step?.place) run.sel = h.step.place[0];
+  else if (h.focus.length === 1) run.sel = h.focus[0];
+  if (h.step?.elim) {
+    const strike = h.step.elim.filter(([c, m]) => run.entries.n[c] & m).map(([c, m]) => [c, 0, run.entries.n[c] & ~m]);
+    if (strike.length) strikeNotes(strike);
+  }
+  message = { text: h.text, tone: "teach" };
+}
+
+// ---------- drawing ----------
+const shown = {};
+const put = (id, v) => { if (shown[id] !== v) { shown[id] = v; $(id).textContent = v; } };
+function render() {
+  if (M) { renderMatch(); return; }
+  if (!S || !P) return;
+  soloBoard();
+  const view = soloView(), done = !!S.done;
+  const marks = { sealed: view.sealed, lent: view.lent, wrong: new Set(S.wrong || []) };
+  if (settings.repeats) marks.conflict = repeats(view.values, unitsForRepeats());
+  if (hintShown) { marks.lit = new Set(hintShown.cells); marks.focus = new Set(hintShown.focus); }
+  board.draw({
+    values: view.values, fixed: view.fixed, notes: S.entries.n, colours: view.owners, marks, cursors: coop && !done ? partnerAt() : undefined,
+    selected: done ? -1 : S.sel, highlight, notesMode: S.notes, counts: countsOf(view.values),
+    off: { undo: done || !S.entries.past.length, redo: done || !S.entries.future.length, erase: done, notes: done, hint: done },
+    veiled: !IN_FRAME && !COOP && !done && isPaused(), flash,       // a shared clock doesn't stand still, so there is nothing to hide
+  });
+  drawStrip();
+  drawLine(done);
+  drawResult();
+  if (flash && flash.key !== glinted && String(flash.key).startsWith("done:")) { glinted = flash.key; desk.glint(); }
+}
+function countsOf(values) {
+  const out = {};
+  for (let d = 1; d <= P.n; d++) out[d] = P.n;
+  for (const v of values) if (v) out[v]--;
+  return out;
+}
+function drawStrip() {
+  const secs = S.done ? S.done.ms / 1000 : soloMs() / 1000, pen = HINT * S.hints;
+  put("clock", fmt(secs + pen));
+  put("penalty", pen ? `+${pen} s` : "");
+  put("kind", S.mode === "daily" ? `Today's · ${kindName({ rules: P.rules, size: P.n, level: P.level })}` : kindName({ rules: P.rules, size: P.n, level: P.level }));
+}
+function drawLine(done) {
+  const l = $("line");
+  const text = done ? "" : message ? message.text
+    : P.cages ? "Each cage adds up to its sum, with no digit twice. Tap a cell, then a digit." : "Tap a cell, then a digit. Notes writes in pencil.";
+  if (l.textContent !== text) l.textContent = text;
+  l.className = `su-line${message?.tone ? ` ${message.tone}` : ""}`;
+}
+function drawResult() {
+  const done = !!S.done;
+  $("pad").classList.toggle("away", done);
+  $("result").hidden = !done;
+  if (!done) return;
+  $("nextBtn").textContent = "Another grid";
+  $("todayBtn").hidden = COOP || S.mode === "daily" || dailyPlayed();
+  if (S.done.shown) { $("verdict").replaceChildren("The solution.", Object.assign(document.createElement("span"), { textContent: "Shown, so it doesn't count." })); return; }
+  const bits = [`${fmt(S.done.ms / 1000)} on the clock`];
+  if (S.hints) bits.push(`${plural(S.hints, "hint")} (+${HINT * S.hints} s)`);
+  let tail = "";
+  if (COOP) tail = "";                    // a shared solve is nobody's best
+  else {
+    const best = read(TIMES, {})[kindKey({ rules: P.rules, size: P.n, level: P.level })];
+    tail = S.done.fresh ? "A new best." : best != null ? `Your best: ${fmt(best)}.` : "";
+  }
+  $("verdict").replaceChildren(`Solved${COOP ? " together" : ""}: ${fmt(S.done.score)}.`, Object.assign(document.createElement("span"), { textContent: `${bits.join(", ")}. ${tail}`.trim() }));
+}
+const dailyPlayed = () => read("sudoku:today", null)?.key === today();
+
+// ---------- together: a race on one grid, or Together, the givens shared out (duel.js is the table) ----------
+// The match is { seed, mode ("race" or "split"), grid (encoded, the same for everyone) }. A race: each solves their
+// own copy from the countdown, the others' progress in the strip, the lowest time (hints added) wins. Together: one
+// grid for the table (sudoku-room.js), each seeing their own share of the givens; anyone writes anywhere; the team's
+// time is from the start to the last digit. Your own grid, bests and today's stay as they were.
+let M = null;            // this device's side of the match: { match, n, begun, P, entries, sel, notes, hints, done, split, part, k, … }
+let roomVal = null, stopWatch = null, reportTimer = 0, lentSince = {};
+const togetherMode = () => read(TOGETHER, null) || (new URLSearchParams(location.search).has("party") ? "race" : "split");
+const duel = createDuel({
+  game: "sudoku", name: "Nonet", accent: "--sudoku-in", line: $("table"), toast, lower: true,
+  deal: async () => {
+    const grid = await dealGrid({ rules: settings.rules, ...rungNow() });
+    return { seed: grid.seed, mode: togetherMode(), grid };
+  },
+  describe: m => `${kindName({ rules: m.grid.rules, size: m.grid.n, level: m.grid.level })}: ${m.mode === "split" ? "one grid for the table, each of you seeing your own share of the givens" : "the same grid for everyone, the fastest solve wins"}`,
+  play: (match, at) => { playMatch(match, at).catch(e => { console.error(e); toast("Couldn't start the match"); }); },
+  onLobby: match => lobby(match),
+  onLeave: () => { leaveMatch(); },
+});
+
+function lobby(match) {
+  clockPause();
+  M = { match, n: null, lobby: true };
+  setGrid(match.grid);
+  makeBoard(P.cages ? P.cages.map(() => false) : null, "lobby");
+  render();
+}
+async function playMatch(match, { begun, kept, n }) {
+  clockPause();
+  setGrid(match.grid);
+  const cells = P.n * P.n, same = kept && kept.n === n && kept.seed === match.seed;
+  M = { match, n, begun, mode: match.mode, sel: same ? kept.sel : -1, notes: same ? !!kept.notes : false, hints: same ? kept.hints || 0 : 0,
+    entries: same && validEntries(kept.entries, cells) ? kept.entries : freshEntries(cells), done: same ? kept.done || null : null, wrong: [], hist: same ? kept.hist || [] : [] };
+  message = null; hintShown = null; highlight = 0;
+  if (M.mode === "split") {
+    // nothing of the grid shows until the shares are known: until then every given would look like yours
+    M.waiting = true;
+    makeBoard(P.cages ? P.cages.map(() => false) : null, `w${n}`);
+    watchRoom();
+    const g = duel.together.room?.data, sh = shareOf(g, duel.together.slot), mine = M;
+    M.part = sh.part; M.k = sh.k;
+    const doneWait = busy("Sharing out the givens", { delay: 300 });
+    try { const split = (await ask({ kind: "split", grid: match.grid, k: sh.k, seed: match.seed })).split; if (M !== mine) return; M.split = split; } finally { doneWait(); }
+    M.waiting = false;
+    coopArrived();
+    sentAt = null;
+    shareCursor();
+  }
+  matchBoard();
+  keepMatch();
+  render();
+  tellSoon();
+}
+/** The match's board: at a Together table of Killer, the sums you see are yours, the shared ones and any lent. */
+function matchBoard() {
+  if (M.mode !== "split" || !P.cages) { makeBoard(null, `m${M.n}`); return; }
+  const lent = lentShares();
+  makeBoard(sumsSeen(M.split, M.part, lent), `m${M.n}:${lent.join(",")}`);
+}
+function leaveMatch() {
+  stopWatch?.(); stopWatch = null; roomVal = null; M = null; lentSince = {};
+  clearTimeout(reportTimer); reportTimer = 0;
+  boardFor = "";
+  loadSolo();
+}
+function watchRoom() {
+  if (stopWatch) return;
+  const room = duel.together.room;
+  if (!room) return;
+  roomVal = room.data;
+  stopWatch = room.sync.watch(branchPath(room.code, "sudoku"), val => { roomVal = val; if (M && !M.lobby) { coopArrived(); render(); } }, e => console.error(e));
+}
+const roomGrid = () => coopOf(roomVal?.n === M?.n ? roomVal : { n: M?.n }, P.n * P.n);
+const matchMs = () => (M?.done ? M.done.ms : Math.max(0, duel.now() - (M?.begun || duel.now())));
+function keepMatch() { if (M && !M.lobby) duel.keep({ n: M.n, seed: M.match.seed, entries: M.entries, sel: M.sel, notes: M.notes, hints: M.hints, done: M.done, hist: M.hist }); }
+
+/** The shares lent to everyone: those nobody here has held for LEND_AFTER. */
+function lentShares() {
+  if (M?.mode !== "split" || !roomVal) return [];
+  const present = presentSlots(roomVal, duel.together.room?.here, "sudoku", duel.together.room?.uid);
+  const orphans = present.length ? orphanShares(roomVal, present) : [], now = performance.now();
+  for (const q of Object.keys(lentSince)) if (!orphans.includes(Number(q))) delete lentSince[q];
+  for (const q of orphans) lentSince[q] ??= now;
+  return orphans.filter(q => now - lentSince[q] >= LEND_AFTER);
+}
+function matchView() {
+  if (M.mode !== "split") return viewFrom({ placed: M.entries.v, notes: M.entries.n, split: null, mine: 0 });
+  const c = roomGrid(), placed = coopValues(c, P).map((d, i) => (P.givens[i] ? 0 : d));
+  for (const [i, d] of Object.entries(M.pending || {})) placed[i] = d;
+  const owners = [...c.by].map(ch => (ch === "." ? null : Number(ch)));
+  // solved, every given is everyone's: the grid shows whole
+  return viewFrom({ placed, notes: M.entries.n, split: M.done ? null : M.split, mine: M.part, lent: lentShares(), owners });
+}
+/** The room's grid came in: what this device placed meanwhile is the room's now, and a solved grid ends the match. */
+function coopArrived() {
+  if (M?.mode !== "split") return;
+  const c = roomGrid();
+  if (M.pending) for (const i of Object.keys(M.pending)) if (Number(c.v[i]) === M.pending[i]) delete M.pending[i];
+  if (c.done && !M.done) {
+    const start = roomVal.start || M.begun, secs = Math.round((c.done - start) / 1000);
+    M.done = { ms: Math.max(0, c.done - start), score: secs + HINT * (c.hints || 0), at: c.done };
+    keepMatch();
+    reportDuo("sudoku", `${roomVal.created}-${roomVal.n}`, { score: M.done.score, won: true, coop: true, lower: true }).catch(e => console.error(e));
+  }
+}
+
+function matchInput(a) {
+  if (!M || M.lobby || M.waiting || M.done) return;
+  const view = matchView();
+  if (a.type !== "select" && a.type !== "notes") { hintShown = null; message = null; }
+  const split = M.mode === "split";
+  switch (a.type) {
+    case "select": M.sel = a.cell; highlight = 0; if (hintShown && !hintShown.cells.includes(a.cell)) hintShown = null; shareCursor(); break;
+    case "notes": M.notes = !M.notes; break;
+    case "digit": {
+      const i = M.sel;
+      if (i < 0 || !writable(view, i)) { highlight = highlight === a.value ? 0 : a.value; break; }
+      if (a.note) { pencil(M.entries, i, a.value); break; }
+      if (split) { const to = view.values[i] === a.value ? 0 : a.value; placeShared(i, to, view.values[i]); if (to) tidyNotes(i, to); unitsDone(i); }
+      else { writeDigit(M.entries, i, a.value, { clear: settings.tidy ? [...SH.peers[i]] : [] }); if (M.entries.v[i]) unitsDone(i); raceDone(); }
+      break;
+    }
+    case "erase":
+      if (M.sel < 0 || !writable(view, M.sel)) break;
+      if (split && view.values[M.sel]) placeShared(M.sel, 0, view.values[M.sel]); else rub(M.entries, M.sel);
+      break;
+    case "undo": if (split) sharedHistory(-1); else undo(M.entries); break;
+    case "redo": if (split) sharedHistory(1); else redo(M.entries); break;
+    case "tool": if (a.id === "hint") matchHint(); break;
+  }
+  keepMatch();
+  tellSoon();
+  render();
+}
+// Where you are on the grid, Together, is written to your seat as you move (at most every 150 ms), so the others see
+// which cell you're on and nobody sets off for the same one; theirs show on yours, in their colour.
+// A party of two does the same on its one grid (the room's players are read from the together object, not roomVal).
+let sentAt = null, cursorTimer = 0;
+function shareCursor() {
+  const room = (coop || duel).together.room;
+  const at = coop ? (S?.done ? -1 : S?.sel) : M?.mode === "split" && !M.lobby && !M.waiting ? (M.done ? -1 : M.sel) : undefined;
+  if (!room || at === undefined) return;
+  clearTimeout(cursorTimer);
+  if (at === sentAt) return;
+  cursorTimer = setTimeout(() => {
+    if (!(coop ? room.data : roomVal)?.players?.[room.uid]) return;            // not seated (any more): a write would leave a stray entry
+    sentAt = at;
+    room.sync.update(`${branchPath(room.code, "sudoku")}/players/${room.uid}`, { at })?.catch?.(e => console.error(e));
+  }, 150);
+}
+/** Co-op: the cell your partner has selected, if they are here, drawn in their colour. */
+function partnerAt() {
+  const room = coop.together.room;
+  if (!room?.data) return {};
+  return partnerCursors(room.data.players, room.uid, coop.together.others().filter(o => o.here).map(o => o.id), P.n * P.n);
+}
+/** The others' cells, those here: { cell: { seat, initial } }. */
+function cursorsOf() {
+  const room = duel.together.room;
+  if (M?.mode !== "split" || !roomVal || !room || M.done) return {};
+  const present = new Set(presentSlots(roomVal, room.here, "sudoku", room.uid)), out = {};
+  for (const [id, p] of Object.entries(roomVal.players || {})) {
+    if (!p || id === room.uid || (room.pid && p.pid === room.pid) || !present.has(p.slot) || !(p.at >= 0)) continue;
+    out[p.at] = { seat: p.slot, initial: first(p.name).slice(0, 1).toUpperCase() };
+  }
+  return out;
+}
+/** Your pencil marks of a digit leave the cells that see it, as they do solo. */
+function tidyNotes(i, d) { if (settings.tidy) for (const p of SH.peers[i]) M.entries.n[p] &= ~bit(d); }
+/** A digit into the shared grid: shown at once, the room's copy following (it's one transaction). */
+function placeShared(cell, digit, from, record = true) {
+  M.pending = { ...(M.pending || {}), [cell]: digit };
+  if (record) { M.hist.push([cell, from || 0, digit]); M.future = []; }
+  const g = M.n, slot = duel.together.slot;
+  duel.together.act(t => placeCoop(t, { n: g, cell, digit, slot, grid: P, now: duel.now() }));
+}
+/** Undo and redo of your own digits in the shared grid, each only while the cell still holds what you left there. */
+function sharedHistory(dir) {
+  const view = matchView();
+  if (dir < 0) {
+    const last = M.hist.pop();
+    if (!last) return;
+    const [cell, from, to] = last;
+    if ((view.values[cell] || 0) === to) placeShared(cell, from, to, false);
+    (M.future ||= []).push(last);
+  } else {
+    const next = M.future?.pop();
+    if (!next) return;
+    const [cell, from, to] = next;
+    if ((view.values[cell] || 0) === from) placeShared(cell, to, from, false);
+    M.hist.push(next);
+  }
+}
+function raceDone() {
+  if (M.mode !== "race" || M.done) return;
+  const cells = P.n * P.n;
+  if (![...Array(cells).keys()].every(i => (P.givens[i] || M.entries.v[i]) === P.solution[i])) return;
+  const ms = matchMs();
+  M.done = { ms, score: Math.round(ms / 1000) + HINT * M.hints, at: Date.now() };
+  flash = { key: `done:${M.n}`, cells: [...Array(cells).keys()] };
+  keepMatch();
+  tell(true);
+}
+function matchHint() {
+  const split = M.mode === "split", view = matchView();
+  const shape = split ? viewOf(P, M.split, M.part, null).shape : SH;
+  const placed = split ? view.values.map((v, i) => (view.fixed[i] ? 0 : v)) : M.entries.v;
+  const h = hintFor({ view: { ...view, shape }, placed, notes: M.entries.n, solutionAt: i => P.solution[i] });
+  if (!h) { message = { text: "Nothing more follows from what you can see: the others' digits will.", tone: "" }; return; }
+  if (split) duel.together.act(t => hintCoop(t, M.n, P.n * P.n)); else M.hints++;
+  showHint(h, M, view, strike => set(M.entries, strike));
+}
+/** What the table sees of you: digits to go (a race) or digits placed (Together), and the result once it's in. */
+function tell(done = false) {
+  if (!M || M.lobby) return;
+  if (M.mode === "split") {
+    const mine = placedBySeat(roomGrid())[duel.together.slot] || 0;
+    duel.report({ score: mine, text: `${plural(mine, "digit")} placed` });
+    return;
+  }
+  if (done || M.done) { duel.report({ score: M.done.score, text: `${fmt(M.done.score)}, solved`, done: true, ms: M.done.ms }); return; }
+  const left = [...Array(P.n * P.n).keys()].filter(i => !P.givens[i] && M.entries.v[i] !== P.solution[i]).length;
+  duel.report({ score: left, text: `${plural(left, "digit")} to go` });
+}
+function tellSoon() {
+  if (reportTimer) return;
+  reportTimer = setTimeout(() => { reportTimer = 0; tell(); }, 1500);
+}
+
+function renderMatch() {
+  if (!P) return;
+  if (M.lobby || M.waiting) {
+    const n = P.n * P.n;
+    board.draw({ values: new Array(n).fill(0), fixed: new Array(n).fill(false), notes: new Array(n).fill(0), colours: null, marks: {}, selected: -1, highlight: 0, notesMode: false, counts: null,
+      off: { undo: true, redo: true, erase: true, notes: true, hint: true }, veiled: true });
+    put("clock", "0:00"); put("penalty", ""); put("kind", kindName({ rules: P.rules, size: P.n, level: P.level }));
+    $("line").textContent = M.match.mode === "split" ? "Together: one grid for the table, each of you seeing your own share of the givens." : "A race: the same grid for everyone, the fastest solve wins.";
+    $("pad").classList.remove("away"); $("result").hidden = true;
+    return;
+  }
+  matchBoard();
+  const view = matchView(), done = !!M.done, split = M.mode === "split";
+  const marks = { sealed: view.sealed, lent: view.lent, wrong: new Set(M.wrong || []) };
+  if (settings.repeats) marks.conflict = repeats(view.values, unitsForRepeats());
+  if (hintShown) { marks.lit = new Set(hintShown.cells); marks.focus = new Set(hintShown.focus); }
+  board.draw({
+    values: view.values, fixed: view.fixed, notes: M.entries.n, colours: view.owners, marks, cursors: cursorsOf(),
+    selected: done ? -1 : M.sel, highlight, notesMode: M.notes, counts: split ? null : countsOf(view.values),
+    off: { undo: done || !(split ? M.hist.length : M.entries.past.length), redo: done || !(split ? M.future?.length : M.entries.future.length), erase: done, notes: done, hint: done },
+    veiled: false, flash,
+  });
+  const hints = split ? roomGrid().hints || 0 : M.hints;
+  put("clock", fmt(matchMs() / 1000 + HINT * hints));
+  put("penalty", hints ? `+${HINT * hints} s` : "");
+  put("kind", `${split ? "Together" : "Race"} · ${kindName({ rules: P.rules, size: P.n, level: P.level })}`);
+  const l = $("line"), text = done ? "" : message ? message.text
+    : split ? (lentShares().length ? `A player is away: their ${P.cages ? "sums are" : "givens are (in grey)"} shown until they're back.`
+      : P.cages ? "A ? is a sum only someone else can see: ask them, or work round it." : "Hatched cells are givens only someone else can see: ask them, or work round them.")
+    : "The same grid for everyone: the fastest solve wins.";
+  if (l.textContent !== text) l.textContent = text;
+  l.className = `su-line${message?.tone ? ` ${message.tone}` : ""}`;
+  $("pad").classList.toggle("away", done);
+  $("result").hidden = !done;
+  if (done) {
+    const v = $("verdict");
+    if (split) {
+      const by = placedBySeat(roomGrid()), seats = Object.entries(roomVal?.players || {}).filter(([, p]) => p?.slot != null).sort((a, b) => a[1].slot - b[1].slot);
+      const who = seats.map(([id, p]) => `${id === duel.together.room?.uid ? "you" : first(p.name)} ${by[p.slot] || 0}`).join(", ");
+      v.replaceChildren(`Solved together: ${fmt(M.done.score)}.`, Object.assign(document.createElement("span"), { textContent: `Digits placed: ${who}.${hints ? ` ${plural(hints, "hint")} (+${HINT * hints} s).` : ""}` }));
+    } else v.replaceChildren(`Solved: ${fmt(M.done.score)}.`, Object.assign(document.createElement("span"), { textContent: "The match sheet has everyone's." }));
+    $("nextBtn").textContent = split ? "Another grid" : "The match";
+    $("todayBtn").hidden = true;
+  }
+}
+
+/** The next match at the table: at once when this one's solved together (nobody's run ends, so duel.js would ask). */
+const nextMatch = () => (M?.mode === "split" && M.done ? duel.again() : duel.newMatch());
+
+// ---------- the rules: a sheet of their own, from the header's Rules and the menu ----------
+function showRules() {
+  $("rulesBody").innerHTML = `
+    <p>Fill the grid so that every row, every column and every region holds each digit once: 1 to 9 on a 9×9, 1 to 6 on a 6×6. Every grid has exactly one solution, reached by reasoning alone.</p>
+    <h4>The rules</h4>
+    <p>Four rule sets (Rules, in the menu), each at 9×9 or 6×6 (Size):</p>
+    <ul>
+      <li><b>Classic</b>: the regions are the boxes, three by three (on a 6×6, two rows by three columns).</li>
+      <li><b>Diagonals</b>: the two long diagonals, shaded, hold each digit once too.</li>
+      <li><b>Jigsaw</b>: the regions are pieces of any shape, outlined in heavy rules.</li>
+      <li><b>Killer</b>: no digits to start with, only cages outlined in dashes, each with a sum in its corner. A cage's digits add up to its sum and never repeat in it; the boxes are regions as in Classic.</li>
+    </ul>
+    <p><b>An example.</b> If the 7s already in the grid rule 7 out of every empty cell of a box but one, by their rows and columns, that cell is 7. In Killer, a cage of two cells adding up to 3 holds 1 and 2; one adding up to 17, 8 and 9.</p>
+    <h4>Playing</h4>
+    <p>Tap a cell, then a digit; the same digit again rubs it out. Notes writes in pencil: the candidates a solver jots small in a cell. Each key shows how many of its digit are still to place, and a digit tapped with no cell selected lights where it stands. On a keyboard: the arrows, the digits (with Shift, in pencil), Backspace, N for Notes, Ctrl+Z and Ctrl+Y.</p>
+    <p>A digit twice in a row, column, region or cage shows in oxblood (Mark repeats), read from the board, never the solution, and a digit you write takes its pencil mark from the cells that see it (Clear pencil marks as you write). The grid is solved the moment every digit is right. Hint (+${HINT}&nbsp;s) strikes through a wrong digit first, then pencil marks that leave out their cell's digit; otherwise it names and explains the easiest next step. The menu also fills in every pencil mark, or shows the solution (the grid then doesn't count).</p>
+    <h4>Levels</h4>
+    <p>A grid's level is the hardest technique it needs, never how many digits it gives. On a 9×9: <b>Easy</b>, singles only (a cell with one digit left, or a digit with one place left in its row, column or region), with at least 36 digits given; <b>Medium</b>, locked candidates (a digit that within a box can only go in one row, so it leaves the rest of that row) and pairs and triples (two cells of a row that can only hold the same two digits keep them to themselves); <b>Hard</b>, quads, fish (the X-wing: a digit with two places in each of two rows, in the same two columns, so it leaves the rest of those columns), wings and short chains; <b>Expert</b>, long chains, a digit in one cell forcing another's, link by link.</p>
+    <p>A 6×6 has Easy (singles, at least 16 digits given), Medium (singles, with none to spare) and Hard. Killer has Easy (the cages' sums and singles), Medium (the rule of 45: a row, column or box adds up to 45, 21 on a 6×6, so what its whole cages leave over is known) and Hard (several rows at once, fish and wings).</p>
+    <h4>Time</h4>
+    <p>The clock stops while the menu, these rules or the games screen is open, the grid hidden meanwhile. A hint adds ${HINT} seconds. Your best is the lowest time for each rule set, size and level.</p>
+    <h4>Today's grid</h4>
+    <p>A classic 9×9 at Medium, the same for everyone and always played alone. Its time counts the moment the last digit goes in, and is Nonet's figure on the games screen.</p>`;
+  if (!$("rulesDlg").open) $("rulesDlg").showModal();
+  $("rulesDlg").scrollTop = 0;                       // from the top each time, not where it was last left
+}
+
+// ---------- the menu ----------
+function openMenu() {
+  const body = $("menuBody");
+  body.replaceChildren();
+  if (duel.on) {
+    part(body, "play").append(action("The rules", showRules, "link"));
+    const together = part(body, "together"), mode = M?.match?.mode || M?.mode || togetherMode();
+    together.append(
+      action("Another grid", nextMatch, "primary"),
+      action(mode === "split" ? "Race instead" : "Together instead", () => { write(TOGETHER, mode === "split" ? "race" : "split"); nextMatch(); }),
+      action("The match", () => duel.open()),
+      action("Back to solo", () => duel.leave(), "link"));
+    contentPart(body, true);
+    settingsPart(body);
+    if (!$("menuDlg").open) $("menuDlg").showModal();
+    return;
+  }
+  const play = part(body, "play");
+  play.append(action(COOP ? "Another grid" : "New grid", () => confirmStart("random"), "primary"));
+  if (S && !S.done) {
+    play.append(action("Fill in every pencil mark", fillNotes));
+    if (!COOP) play.append(action("Show the solution", giveUp, "link"));       // a shared grid is never given up on for both
+  }
+  play.append(action("The rules", showRules, "link"));
+  contentPart(body, COOP);
+  if (!COOP) part(body, "content").prepend(modeChoice());
+  settingsPart(body);
+  if (!COOP) todayPart(body, { app: "sudoku", play: () => start("daily"), playing: S?.mode === "daily" && S.grid.seed === today(), busy: startedSolo() });
+  if (coop) part(body, "together").append(line(`Co-op with ${coop.otherName}: one grid for you both.`), action(coop.host ? "End the co-op" : "Leave the co-op", () => coop.leave(), "link"));
+  const best = S && !COOP ? read(TIMES, {})[kindKey({ rules: P.rules, size: P.n, level: P.level })] : null;
+  const about = part(body, "about");
+  about.append(line(S ? `${kindName({ rules: P.rules, size: P.n, level: P.level })}: ${COOP ? (S.done ? "solved" : "not solved yet") : best != null ? `best ${fmt(best)}` : "not solved yet"}. A hint adds ${HINT} s.` : `A hint adds ${HINT} s.`));
+  if (!COOP) about.append(action("Copy a link to this grid", copyLink, "link"));
+  if (!$("menuDlg").open) $("menuDlg").showModal();
+}
+// Korbi, 8 Nov 2026: Calcudoku is a mode of Nonet (its page, calcudoku.html, kept as it was: saves, co-op and links; Calcudoku has no tile of its own)
+const modeChoice = () => choice("Mode", [["nonet", "Nonet"], ["calcudoku", "Calcudoku"]], "nonet", v => { if (v === "calcudoku") location.href = "calcudoku.html"; });
+/** The kind of grid the next one deals. */
+function contentPart(body) {
+  part(body, "content").append(choice("Kind", Object.entries(RULES).map(([k, r]) => [k, r.label]), settings.rules, v => { settings.rules = v; saveSettings(); openMenu(); }));
+}
+function settingsPart(body) {
+  const s = part(body, "settings");
+  s.append(choice("View", deskChoice.options, deskChoice.get(), v => { deskChoice.set(v); showDesk(); }),
+    toggle("Mark repeats", settings.repeats, v => { settings.repeats = v; saveSettings(); render(); }));
+}
+async function fillNotes() {
+  if (!S || S.done) return;
+  // in a co-op the marks are the grid's: filling them in replaces the ones your partner has made too
+  if (coop && S.entries.n.some(Boolean) && !(await sure("Fill in every pencil mark? It replaces the pencil marks for both of you.", { yes: "Fill in" }))) return;
+  const view = soloView(), st = stateOf(SH, Uint8Array.from(view.values)), notes = {};
+  for (let i = 0; i < P.n * P.n; i++) if (!view.values[i] && !view.sealed.has(i)) notes[i] = st.cand[i];
+  if (fill(S.entries, notes)) sendMove();
+  save();
+  render();
+}
+async function giveUp() {
+  if (!S || S.done || !(await sure("Show the solution and end this grid? It won't count.", { yes: "Show it" }))) return;
+  clockPause();
+  const cells = P.n * P.n;
+  set(S.entries, [...Array(cells).keys()].filter(i => !P.givens[i]).map(i => [i, P.solution[i], 0]));
+  S.done = { ms: Math.round(S.ms), score: Math.round(S.ms / 1000) + HINT * S.hints, at: Date.now(), shown: true };
+  message = null;
+  save();
+  render();
+}
+async function copyLink() {
+  const link = `${location.origin}${location.pathname}${location.hash}`;
+  try { await navigator.clipboard.writeText(link); toast("Link copied"); } catch { toast(link, 6000); }
+}
+let toastTimer = null;
+function toast(msg, ms = 2600) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), ms);
+}
+
+// ---------- wiring ----------
+bindSwitcher($("appsBtn"), "sudoku");
+document.querySelector(".su-mark").innerHTML = APPS.find(a => a.id === "sudoku")?.logo || "";
+$("menuBtn").addEventListener("click", openMenu);
+$("menuClose").addEventListener("click", () => $("menuDlg").close());
+$("rulesBtn").addEventListener("click", showRules);
+$("rulesClose").addEventListener("click", () => $("rulesDlg").close());
+$("nextBtn").addEventListener("click", () => { if (M) { if (M.mode === "split") nextMatch(); else duel.open(); } else start("random"); });
+$("todayBtn").addEventListener("click", () => start("daily"));
+document.addEventListener("visibilitychange", () => { if (document.hidden) clockPause(); else { clockRun(); duel.resync(); coop?.together.resync(); } render(); });
+window.addEventListener("pageshow", e => { if (e.persisted) duel.resync(); });
+window.addEventListener("pagehide", () => clockPause());
+window.addEventListener("hashchange", () => {
+  const k = hashKind();
+  if (!COOP && !duel.on && k && !(S && S.grid.seed === k.seed && S.grid.rules === k.rules && S.grid.n === k.size)) linkStart(k);
+});
+let partnerKey = "";
+setInterval(() => {
+  if (M && !M.lobby) { render(); return; }
+  if (!S) return;
+  drawStrip();
+  if (coop && !S.done) {            // the partner's cell moves without the grid changing: draw it when it does
+    const key = JSON.stringify(partnerAt());
+    if (key !== partnerKey) { partnerKey = key; render(); }
+  }
+  if (clockFrom != null && performance.now() - savedAt > SAVE_EVERY) { clockPause(); clockRun(); }
+}, 250);
+
+async function linkStart(k) {
+  let grid;
+  try { grid = await dealGrid(k, k.mode === "daily" ? "Setting today's grid" : "Setting the grid"); } catch (e) { console.error(e); return; }
+  begin(fresh(grid, k.mode));
+}
+/** Your own grid: a link's, today's from the games screen's tile while it's to play, the saved one, or a first. */
+async function loadSolo() {
+  S = read(RUN, null);
+  if (!validRun(S)) S = null;
+  const k = hashKind();
+  if (k && !(S && S.grid.seed === k.seed && S.grid.rules === k.rules && S.grid.n === k.size && S.mode === k.mode)) { await linkStart(k); return; }
+  const todays = forToday && !IN_FRAME && !(S?.mode === "daily" && S.grid.seed === today());
+  if (S) begin(S);                                   // yours is on the board while it asks about today's
+  if (todays && (!startedSolo() || await sure("Today's grid is waiting. Leave the one you've started?", { yes: "Today's grid", no: "Keep mine" }))) { await start("daily"); return; }
+  if (!S && !IN_FRAME) await start("daily");         // a first visit opens today's grid; a partner's frame shows only theirs
+}
+
+/** The grid of a party of two: the room's, drawn each time it moves (coop-page.js). */
+function showBoard(board, info) {
+  const run = sudokuCoop.run(board), wasDone = !!S?.done;
+  team = board.start || team;
+  coopHost = info.host;
+  if (info.fresh || !S) {
+    S = { sel: -1, notes: false, ms: 0, wrong: [], ...run };
+    setGrid(S.grid);
+    message = null; hintShown = null; highlight = 0; flash = null; sentDone = false; sentAt = null;
+  } else {
+    S.entries.v = run.entries.v; S.entries.n = run.entries.n;
+    S.hints = run.hints; S.done = run.done; S.mode = run.mode;
+    S.wrong = S.wrong.filter(i => S.entries.v[i] && S.entries.v[i] !== P.solution[i]);      // a wrong digit your partner has fixed is no longer struck
+  }
+  if (S.done) hintShown = null;
+  else checkDone();
+  if (S.done && !wasDone && !info.fresh) flash = { key: `done:${S.done.ms}`, cells: [...Array(P.n * P.n).keys()] };
+  shareCursor();
+  save();
+  render();
+}
+async function joinPartner() {
+  const { startCoop } = await import("./coop-page.js");
+  coop = await startCoop("sudoku", {
+    toast, show: showBoard,
+    fresh: async () => coopShare(fresh(await dealGrid({ rules: settings.rules, ...rungNow() }), "random")),
+    bar: el => { $("kind").hidden = true; $("kind").after(el); },
+  });
+  if (!coop && !IN_FRAME) loadSolo();
+}
+
+// for tests and debugging
+window.__sudoku = { get state() { return S; }, get match() { return M; }, get puzzle() { return P; }, get board() { return board; }, get coop() { return coop; }, onInput, start, duel, settings };
+
+const forToday = arrivedForToday();
+// a party of two in the address (&coop=1): its one grid; else a match in the address: its table, with no solo grid made under it
+if (COOP) joinPartner().catch(e => { console.error(e); loadSolo(); });
+else if (duel.inAddress) duel.join().then(ok => { if (!ok) loadSolo(); });
+else loadSolo();

@@ -1,0 +1,154 @@
+/* Dujiang, as a Song hydraulic landscape (Korbi, 4 November 2026): a polder of rice-paper plots, the sea a celadon canal cut
+   through it, a number carved on a stone marker. The palette is the 3D view's: celadon, ink, rice paper, vermilion for
+   accents; what breaks a rule is oxblood, a hint's cells gilt, and a whole plot greens and its number turns verdigris.
+   The board is an SVG drawn to a viewBox in cell units, so it grows with its box. */
+:root {
+  --nk-in: #8A5A2B; --nk-in-soft: color-mix(in srgb, var(--nk-in) 15%, var(--sheet));
+  --nk-good: #2F7D5B; --nk-bad: #A8382B; --nk-gilt: #C8923A;
+  --nk-sea: #4A9A92; --nk-sea-edge: #3B8079; --nk-wave: #CFE6DF; --nk-plot: #D6C28E; --nk-tile: #EFE6CF; --nk-stone: #D6D1C1; --nk-crop: #8FB06A; --nk-paper: #EFE8D4; --nk-logo-tint: #EBDDC9; --nk-logo-edge: var(--logo-edge);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --nk-in: #D2A06A; --nk-good: #7FC2A8; --nk-bad: #E8806F; --nk-gilt: #E2B865; --nk-sea: #3F9396; --nk-sea-edge: #2F7679; --nk-wave: #8FC9C4; --nk-plot: #8F8160; --nk-tile: #4B463A; --nk-stone: #9FA196; --nk-crop: #6E9A5A; --nk-paper: #1C2B30; --nk-logo-tint: #3A2D1E; }
+}
+html[data-mode="night"] { --nk-in: #D2A06A; --nk-good: #7FC2A8; --nk-bad: #E8806F; --nk-gilt: #E2B865; --nk-sea: #3F9396; --nk-sea-edge: #2F7679; --nk-wave: #8FC9C4; --nk-plot: #8F8160; --nk-tile: #4B463A; --nk-stone: #9FA196; --nk-crop: #6E9A5A; --nk-paper: #1C2B30; --nk-logo-tint: #3A2D1E; }
+
+.nk-mark { display: inline-block; }
+.nk-mark svg { width: 100%; height: 100%; display: block; }
+
+.nk-strip { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .1rem .6rem; margin: .6rem 0 .5rem;
+  font-size: .92rem; color: var(--ink-soft); white-space: nowrap; }
+.nk-time b { color: var(--ink); font-weight: 800; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+.nk-time small { margin-left: .4rem; font-size: .78rem; font-weight: 700; color: var(--nk-bad); font-variant-numeric: tabular-nums; }
+.nk-time small.nk-landn { color: var(--ink-soft); font-size: .74rem; font-weight: 800; font-stretch: var(--wide); letter-spacing: calc(.1em * var(--track)); text-transform: var(--caps); }
+.nk-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: .74rem; font-weight: 800; font-stretch: var(--wide);
+  letter-spacing: calc(.1em * var(--track)); text-transform: var(--caps); color: var(--brass-lo); }
+
+/* the board: the stage, framed in a double rule (a brass edge, a hairline four pixels inside it) */
+.nk-card { position: relative; border-radius: 6px; background: var(--sheet); padding: .5rem;
+  box-shadow: inset 0 0 0 1px var(--brass), inset 0 0 0 4px var(--sheet), inset 0 0 0 5px var(--rule); }
+.nk-board { width: 100%; height: 100%; display: grid; place-items: center; min-height: 0; }
+.nk-svg { display: block; width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: pointer; }
+.nk-paper { fill: var(--nk-stone); stroke: var(--tile-edge); stroke-width: .03; }
+/* a cell: paper (an island, or not yet marked), or sea shaded over it; an island's cell carries a dot as the player's note */
+.nk-cell { fill: var(--nk-tile); stroke: color-mix(in srgb, var(--ink) 22%, var(--nk-tile)); stroke-width: .03; }
+.nk-c.sea .nk-cell { fill: var(--nk-sea); stroke: var(--nk-sea-edge); }
+/* a whole plot greens; a number stands on its stone marker */
+.nk-c.whole .nk-cell { fill: color-mix(in srgb, var(--nk-crop) 38%, var(--nk-tile)); }
+.nk-c.num .nk-cell { fill: var(--nk-stone); }
+.nk-c.num.whole .nk-cell { fill: color-mix(in srgb, var(--nk-crop) 30%, var(--nk-stone)); }
+/* the canal's ripples: two strokes a sea cell */
+.nk-flow { fill: none; stroke: var(--nk-wave); stroke-width: .05; stroke-linecap: round; opacity: 0; pointer-events: none; }
+.nk-c.sea .nk-flow { opacity: .55; }
+.nk-c.sea.pool .nk-flow, .nk-c.sea.cut .nk-flow { opacity: .25; }
+.nk-c.pool .nk-cell, .nk-c.cut .nk-cell { fill: color-mix(in srgb, var(--nk-bad) 62%, var(--nk-sea)); }
+.nk-c.over .nk-cell { fill: color-mix(in srgb, var(--nk-bad) 30%, var(--nk-tile)); }
+.nk-c.num.over .nk-cell { fill: color-mix(in srgb, var(--nk-bad) 30%, var(--nk-stone)); }
+.nk-dot { fill: var(--ink-soft); pointer-events: none; opacity: 0; }
+.nk-c.land .nk-dot { opacity: 1; }
+.nk-num { font-family: Archivo, Arial, sans-serif; font-weight: 800; font-size: .56px; fill: var(--ink); text-anchor: middle; pointer-events: none; }
+.nk-num.mid { font-size: .44px; }
+.nk-num.long { font-size: .34px; }
+.nk-c.done .nk-num { fill: var(--nk-good); }
+/* an arch bridge (a rule, the cell is island): a plank deck between vermilion rails, the canal showing at its two sides; the 3D scene's
+   decorative arches over plain water are another thing (a sea cell), so this one is drawn on paper, never over celadon */
+.nk-deck { fill: color-mix(in srgb, var(--nk-plot) 70%, var(--nk-tile)); pointer-events: none; }
+.nk-plank { fill: color-mix(in srgb, var(--ink) 40%, var(--nk-plot)); pointer-events: none; }
+.nk-rail { fill: var(--nk-rail, #B5472F); pointer-events: none; }
+.nk-under { fill: var(--nk-sea); pointer-events: none; }
+.nk-c.bridge .nk-cell { fill: var(--nk-stone); }
+.nk-c.bridge.whole .nk-cell { fill: color-mix(in srgb, var(--nk-crop) 30%, var(--nk-stone)); }
+.nk-c.over .nk-num { fill: var(--nk-bad); }
+.nk-ring { fill: none; stroke: transparent; stroke-width: .08; pointer-events: none; }
+.nk-c.lit .nk-ring { stroke: var(--nk-gilt); stroke-width: .1; }
+.nk-c.why .nk-ring { stroke: var(--nk-gilt); stroke-width: .08; stroke-dasharray: .14 .09; }
+/* the solve: the canal fills from the top left, a lighter celadon running along it */
+.nk-svg.solved .nk-c.sea .nk-cell { animation: nk-wave .8s ease-out var(--d, 0ms) both; }
+/* every keyframe written out: an implicit one took SVG's default fill while a cell waited for its turn */
+@keyframes nk-wave { 0% { fill: var(--nk-sea); } 40% { fill: var(--nk-wave); } 100% { fill: color-mix(in srgb, var(--nk-wave) 22%, var(--nk-sea)); } }
+@media (prefers-reduced-motion: reduce) { .nk-svg.solved .nk-c.sea .nk-cell { animation: none; fill: color-mix(in srgb, var(--nk-wave) 22%, var(--nk-sea)); } }
+
+/* the 3D view (nurikabe-3d.js), over the flat board's place and played the same way; the numbers are plates of the page laid over their blocks */
+.nk-model { position: absolute; inset: .5rem; overflow: hidden; border-radius: 4px; background: var(--nk-paper, #EFE8D4); }
+.nk3-back { position: absolute; top: 0; left: -10%; width: 120%; height: 100%; display: block; pointer-events: none; }
+.nk-model[hidden] { display: none; }
+.nk-card.is-model .nk-board { visibility: hidden; }
+.nk3-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.nk3-gl:active { cursor: grabbing; }
+.nk3-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; --k: 1; }
+.nk3-n { position: absolute; left: 0; top: 0; display: grid; place-items: center; min-width: calc(1.3rem * var(--k)); height: calc(1.3rem * var(--k)); padding: 0 calc(.15rem * var(--k)); box-sizing: border-box;
+  border-radius: 3px; border: 1.5px solid var(--ink); background: var(--nk-stone); color: var(--ink); font-family: Archivo, Arial, sans-serif; font-weight: 800; font-size: calc(.85rem * var(--k));
+  font-variant-numeric: tabular-nums; line-height: 1; box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 35%, transparent), inset 0 0 0 2px color-mix(in srgb, var(--nk-stone) 70%, #fff); will-change: transform; }
+.nk3-n.done { border-color: var(--nk-good); color: var(--nk-good); background: color-mix(in srgb, var(--nk-good) 18%, var(--nk-stone)); }
+.nk3-n.over { border-color: var(--nk-bad); color: var(--nk-bad); background: color-mix(in srgb, var(--nk-bad) 22%, var(--nk-stone)); }
+.nk3-n.why { box-shadow: 0 0 0 2px var(--nk-gilt); }
+.nk3-zoom { position: absolute; right: .5rem; bottom: .5rem; display: grid; gap: .3rem; }
+.nk3-zoom button { width: 2.1rem; height: 2.1rem; padding: 0; border: 1px solid var(--tile-edge); border-radius: 4px; background: var(--nk-tile); color: var(--ink); font: inherit; font-size: 1.15rem; font-weight: 700; line-height: 1; cursor: pointer; }
+.nk3-zoom button:active { background: color-mix(in srgb, var(--brass) 25%, var(--nk-tile)); }
+@media (hover: none) and (pointer: coarse) { .nk3-zoom { display: none; } }
+
+/* under the board: a line of what to do or what happened, three tools; at the end, how it went and the way on, in the
+   same room. The line keeps three lines' height, so a long hint never moves the board. */
+.nk-side { display: grid; align-content: start; margin-top: .6rem; min-height: 7.2rem; }
+.nk-side > * { grid-area: 1 / 1; }
+.nk-controls { display: grid; gap: .45rem; align-content: start; }
+.nk-controls[hidden], .nk-result[hidden] { display: none; }
+.nk-say { margin: 0; height: 4.05em; overflow: hidden; font-size: .86rem; line-height: 1.35; color: var(--ink-soft); }
+.nk-time small.nk-landn.over { color: var(--nk-bad); }
+.nk-say.bad { color: var(--nk-bad); }
+.nk-say.good { color: var(--nk-good); }
+.nk-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+.nk-tool { display: grid; gap: .05rem; align-content: center; min-height: 3.25rem; border-radius: 5px; border: 2px solid var(--tile-edge); background: var(--yard);
+  color: var(--ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+.nk-tool b { font-weight: 800; }
+.nk-tool small { font-size: .72rem; color: var(--ink-soft); }
+.nk-tool:disabled { opacity: .45; cursor: default; }
+.nk-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-self: start; gap: .8rem; min-height: 6.6rem; }
+.nk-verdict { margin: 0; font-size: .98rem; font-weight: 750; line-height: 1.3; color: var(--nk-good); }
+.nk-go { min-height: 3.125rem; padding: 0 1.2rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); font: inherit; font-size: .86rem;
+  font-weight: 800; font-stretch: 106%; letter-spacing: calc(.07em * var(--track)); text-transform: var(--caps);
+  outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; cursor: pointer; }
+.nk-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 20;
+  max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.nk-toast.show { opacity: 1; }
+
+/* the rules: a sheet that scrolls as one piece, its head (with Close) staying at the top, as the menu's does */
+dialog.nk-sheet { max-height: 88vh; max-height: 88svh; overflow-y: auto; overscroll-behavior: contain; padding-top: 0; }
+.nk-sheet .pick-head { position: sticky; top: 0; z-index: 1; background: var(--sheet); padding: 1.1rem 0 .5rem; }
+.nk-sheet .pick-head h2 { font-size: 1rem; }
+.nk-rules p { margin: .5rem 0; line-height: 1.45; }
+.nk-rules h4 { margin: 1.1rem 0 .2rem; }
+
+/* held sideways: the board on the left with all the height; the time, the line and the tools beside it, the tools low */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.nurikabe { --beside: 17rem; grid-template-rows: auto auto minmax(0, 1fr); }
+  #app.nurikabe .nk-strip { grid-column: 2; grid-row: 2; flex-direction: column; align-items: flex-start; gap: .35rem; margin-top: 1rem; white-space: normal; }
+  #app.nurikabe .nk-card { grid-column: 1; grid-row: 2 / span 2; margin-top: .8rem; }
+  #app.nurikabe .nk-side { grid-column: 2; grid-row: 3; align-content: end; margin-top: 0; min-height: 0; }
+  #app.nurikabe .nk-controls { align-content: end; }
+  #app.nurikabe .nk-say { height: auto; max-height: 8.2em; }
+  #app.nurikabe .nk-tools { grid-template-columns: 1fr; }
+  #app.nurikabe .nk-tool { min-height: 2.9rem; }
+  #app.nurikabe .nk-result { grid-template-columns: 1fr; align-self: end; }
+}
+
+/* Office: no double rule, rounder corners, the main action in the enamel (as themes.css does for the other games) */
+html[data-theme="office"] .nk-card { border-radius: 20px; box-shadow: none; border: 1px solid var(--tile-edge); }
+html[data-theme="office"] .nk-tool { border-radius: 12px; }
+html[data-theme="office"] .nk-go { border-radius: 14px; background: var(--nk-in); color: #fff; font-size: 1.02rem; font-stretch: 100%; letter-spacing: normal; text-transform: none; outline: none; outline-offset: 0; }
+html[data-theme="office"] .nk-toast { border-radius: 10px; }
+html[data-theme="office"] .nk-kind { font-stretch: 100%; }
+
+/* the levels in the menu: the chapters, three levels to a row */
+#menuBody .nk-chap { margin: .9rem 0 .35rem; font-size: .66rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.12em * var(--track)); color: var(--brass); }
+#menuBody .nk-chap:first-child { margin-top: .4rem; }
+.nk-lgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.nk-lgrid button { display: grid; gap: .2rem; padding: .4rem .45rem; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.nk-lgrid button.done { background: var(--nk-in-soft); }
+.nk-lgrid button[aria-current] { border-color: var(--nk-in); box-shadow: inset 0 0 0 1.5px var(--nk-in); }
+.nk-lgrid button:disabled { opacity: .4; cursor: default; }
+.nk-lrow { display: flex; justify-content: space-between; align-items: baseline; gap: .2rem; }
+.nk-lrow b { font-size: .95rem; }
+.nk-lrow span { font-size: .62rem; letter-spacing: .05em; color: var(--nk-gilt); white-space: nowrap; }
+.nk-lname { font-size: .74rem; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.nk-lsize { font-size: .64rem; color: var(--ink-soft); }

@@ -1,0 +1,52 @@
+# Every push to main is tested, but only with the tests that take under five seconds (Korbi, 29 October 2026), and only for what
+# it changed and a rotating slice of the rest (tools/pick-tests.mjs: the quick tests that read every page, the tests of the
+# changed files, and a twentieth of the remaining tests, a different twentieth each push); the whole suite, slow tests
+# included, runs every night and on demand (all-tests.yml).
+# sw.js is published only when the push's tests pass. GitHub Pages serves main as it is,
+# but devices with the app installed only move to a new version when sw.js changes (it lists every file with a version
+# from their contents), so a push that fails a test never reaches them: they stay on the last good version. sw.js is
+# written by this workflow and by nobody else, so several people, or several Claudes, can push without colliding on
+# it. A newer push cancels an older run; a run that finds main has moved on leaves publishing to the newer one.
+name: Test and publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish
+  cancel-in-progress: true
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # the push's changed files are the difference from where main was before it
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The banks are built from kb/ and current
+        # under a second when it's linear; the time limit catches a scan of every link creeping back into a loop
+        run: timeout 30 node tools/build-kb.mjs --check
+      - name: Tests for what changed
+        # compared with the last commit the bot published (where every test last passed), not with the push before: a run
+        # that a newer push cancelled must not leave its changes untested. Every test on a manual run or when there's no
+        # such commit; a failing one prints its output and fails the step
+        run: |
+          base=$(git log -1 --format=%H --author='github-actions' --grep='^sw.js for ')
+          if [ "${{ github.event_name }}" = push ] && [ -n "$base" ]; then
+            node tools/pick-tests.mjs --run --slot "$(git rev-list --count HEAD)" $(git diff --name-only "$base" "$GITHUB_SHA")
+          else
+            node tools/pick-tests.mjs --run --all
+          fi
+      - name: Publish sw.js
+        run: |
+          node tools/build-sw.mjs
+          if git diff --quiet -- sw.js; then echo "sw.js is already current"; exit 0; fi
+          if [ "$(git ls-remote origin refs/heads/main | cut -f1)" != "$(git rev-parse HEAD)" ]; then echo "main has moved on: its own run publishes"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "sw.js for ${GITHUB_SHA::7}: its tests passed" -- sw.js
+          git push origin HEAD:main || echo "main moved on while publishing: its own run publishes"

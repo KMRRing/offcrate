@@ -1,0 +1,204 @@
+/* Punt: a merchant's venture. The question sits on a card under a double brass rule; the purse is a running
+   ledger figure. Green enamel for Punt's colours, the suite's red and green for gains and losses. */
+:root {
+  --pt-turf: #2F6B4F;       /* verdigris, enamelled */
+  --pt-turf-ink: #F5EFE1;
+  --pt-ticket: var(--tile);
+  --pt-ticket-edge: var(--tile-edge);
+  --pt-win: #2F7D5B;
+  --pt-loss: #A8382B;
+  --pt-pick: var(--ink);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --pt-turf: #6FB28E; --pt-turf-ink: #0E1A14; --pt-win: #7FC2A8; --pt-loss: #E8806F; }
+}
+/* night, set in Settings */
+html[data-mode="night"] { --pt-turf: #6FB28E; --pt-turf-ink: #0E1A14; --pt-win: #7FC2A8; --pt-loss: #E8806F; }
+
+#app.punt { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; }
+.pt-mark { display: inline-block; }
+.pt-mark svg { width: 100%; height: 100%; display: block; }
+.pt-partner { margin: .5rem 0 0; font-size: .95rem; }
+.pt-partner b { font-weight: 750; }
+
+/* the page fits the screen: the slip takes the room left and scrolls inside itself if the question is long; the
+   betting panel or the result sits under it, the result's notes scrolling inside so Next stays in reach */
+.pt-ledger { display: flex; justify-content: space-between; align-items: baseline; margin: .6rem 0 .5rem; }
+.pt-progress { color: var(--ink-soft); font-size: .95rem; }
+.pt-avg { margin: -.35rem 0 .4rem; text-align: right; color: var(--ink-soft); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.pt-lengths { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin: .3rem 0 .4rem; }
+.pt-lengths .btn[aria-pressed="true"] { background: var(--plate); color: var(--plate-ink); }
+.pt-lengths.pt-tabs { grid-template-columns: 1fr 1fr; }
+.pt-pot { font-size: 1rem; }
+.pt-pot-label { color: var(--ink-soft); }
+.pt-pot b { font-size: 1.7rem; font-weight: 800; font-stretch: var(--stretch-btn); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.pt-pot b.up { color: var(--pt-win); }
+.pt-pot b.down { color: var(--pt-loss); }
+
+/* the question card: the question and the options under a quiet dial-maker's head, a double brass rule with a lozenge at
+   its middle like a chapter ring's twelve (Korbi, 4 November 2026: the torn top edge read as a betting slip; "something
+   more art deco horological ... not too aggressive") */
+.pt-slip { --star-top: .3rem; --star-right: .5rem; --star-bg: transparent; position: relative; background: var(--pt-ticket); border: 1px solid var(--pt-ticket-edge); border-radius: 6px;
+  padding: 0; margin-top: .4rem; display: flex; flex-direction: column; }
+.pt-slip-body { flex: 1 1 auto; min-height: 0; padding: 1.3rem 1rem 1rem; border-radius: 6px; }
+.pt-slip::before { content: ""; position: absolute; left: .9rem; right: .9rem; top: .45rem; height: .1875rem; box-sizing: border-box; pointer-events: none;
+  border-top: 1px solid var(--brass, var(--pt-ticket-edge)); border-bottom: 1px solid var(--brass, var(--pt-ticket-edge)); opacity: .7; }
+.pt-slip::after { content: ""; position: absolute; left: 50%; top: .29rem; width: .42rem; height: .42rem; pointer-events: none;
+  transform: translateX(-50%) rotate(45deg); background: var(--pt-ticket); border: 1px solid var(--brass, var(--pt-ticket-edge)); }
+.pt-ask { margin: 0; color: var(--ink-soft); font-size: .95rem; }
+.pt-prompt { margin: .2rem 0 1rem; font-size: 2rem; font-weight: 800; font-stretch: 108%; line-height: 1.1; letter-spacing: -.01em; overflow-wrap: anywhere; hyphens: auto; }
+.pt-prompt.long { font-size: 1.3rem; font-weight: 750; font-stretch: 100%; line-height: 1.3; letter-spacing: 0; hyphens: none; }
+.pt-option.long { font-size: .95rem; }
+.pt-maths { display: flex; gap: .4rem; margin-top: .5rem; }
+.pt-maths .pick { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.pt-chips { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; margin: .3rem 0 .6rem; }
+.pt-chips-10 { grid-template-columns: repeat(5, 1fr); }
+.pt-chips .btn { min-height: 2.625rem; padding: .3rem .2rem; }
+.pt-chips .btn[aria-pressed="true"] { background: var(--plate); color: var(--plate-ink); }
+#mathsDlg h3 { margin: .8rem 0 .2rem; }
+.pt-need { margin: -.6rem 0 .8rem; font-weight: 750; color: var(--pt-turf); }
+.pt-figure { margin: -.4rem 0 .9rem; display: grid; place-items: center; }
+.pt-figure svg { width: 100%; max-width: 20rem; height: auto; display: block; }
+.pt-figure[hidden] { display: none; }
+.pt-picture { margin: -.4rem 0 .9rem; display: grid; place-items: center; gap: .25rem; }
+.pt-picture[hidden] { display: none; }
+.pt-picture img { max-width: 100%; max-height: 26vh; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.18); }
+.pt-picture .pic-caption { font-size: .75rem; color: var(--ink-soft); }
+.pt-code { margin: -.3rem 0 .9rem; padding: .6rem .75rem; border-radius: 10px; background: var(--sheet); font: .88rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow-x: auto; }
+.pt-code[hidden] { display: none; }
+.pt-options { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.pt-option { min-height: 3.25rem; padding: .5rem .7rem; border-radius: 10px; border: 2px solid var(--pt-ticket-edge); background: var(--sheet);
+  font-weight: 700; font-size: 1.02rem; line-height: 1.2; text-align: center; cursor: pointer; overflow-wrap: anywhere; }
+.pt-option[aria-checked="true"] { border-color: var(--pt-pick); box-shadow: inset 0 0 0 2px var(--pt-pick); }
+.pt-option.right { border-color: var(--pt-win); background: color-mix(in srgb, var(--pt-win) 16%, var(--sheet)); }
+.pt-option.wrong { border-color: var(--pt-loss); background: color-mix(in srgb, var(--pt-loss) 14%, var(--sheet)); }
+.pt-option:disabled { cursor: default; color: inherit; }
+
+/* the commitment */
+.pt-betting { margin-top: .7rem; }
+#stake { width: 100%; margin: .55rem 0 .25rem; accent-color: var(--pt-turf); height: 1.75rem; }
+.pt-chips { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: .35rem; }
+.pt-chips .btn { min-height: 2.25rem; padding: .2rem .2rem; font-size: .9rem; white-space: nowrap; }
+.pt-buttons { display: grid; grid-template-columns: 1fr 2fr; gap: .6rem; margin-top: .55rem; }
+.pt-buttons .btn { min-height: 3rem; }
+
+/* what happened */
+.pt-result { margin-top: .7rem; display: flex; flex-direction: column; min-height: 0; max-height: 52%; }
+.pt-result > * { flex: none; }
+.pt-result[hidden] { display: none; }
+.pt-verdict { margin: 0 0 .4rem; font-size: 1.2rem; font-weight: 800; }
+.pt-verdict.won { color: var(--pt-win); }
+.pt-verdict.lost { color: var(--pt-loss); }
+/* what's under the verdict scrolls in one box: at a table the standings, then the notes */
+.pt-result > .pt-reveal { flex: 0 1 auto; min-height: 0; margin: 0 0 .5rem; }
+.pt-notes { margin: 0 0 .5rem; padding-left: 1.1rem; display: grid; gap: .35rem; align-content: start; font-size: .95rem; }
+.pt-reveal > .pt-notes { margin: 0; }
+.pt-notes b { font-weight: 750; }
+
+.pt-rules { margin: .8rem 0; padding-left: 1.3rem; display: grid; gap: .55rem; }
+.pt-kelly { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; margin: .3rem 0 .5rem; }
+.pt-kelly th { text-align: left; font-size: .8rem; font-weight: 650; color: var(--ink-soft); padding: .25rem .3rem; border-bottom: 1px solid var(--pt-ticket-edge); }
+.pt-kelly td { padding: .35rem .3rem; border-bottom: 1px solid var(--pt-ticket-edge); }
+#statsBody h3 { margin: 1rem 0 .2rem; }
+.pt-flag { margin: .2rem 0 .6rem; padding: 0; background: none; border: 0; color: var(--ink-soft); font: inherit; font-size: .88rem;
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pt-flag:disabled { text-decoration: none; cursor: default; }
+.pt-reasons { display: grid; gap: .4rem; margin: .4rem 0 .7rem; }
+.pt-reasons .btn { text-align: left; justify-content: flex-start; }
+.pt-reasons .btn[aria-checked="true"] { background: var(--plate); color: var(--plate-ink); }
+.pt-note-label { display: block; font-size: .85rem; color: var(--ink-soft); margin-bottom: .25rem; }
+.pt-note { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem .6rem; border-radius: 10px; border: 2px solid var(--pt-ticket-edge);
+  background: var(--sheet); color: var(--ink); margin-bottom: .6rem; resize: vertical; }
+.pt-flaglist { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .55rem; font-size: .9rem; }
+.pt-flaglist li { padding: .5rem .6rem; border-radius: 10px; background: var(--sheet); }
+.pt-flaglist small { color: var(--ink-soft); }
+.pt-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin: 1rem 0 .6rem; }
+.pt-stats div { display: flex; flex-direction: column; align-items: center; gap: .1rem; text-align: center; }
+.pt-stats dd { margin: 0; font-size: 1.5rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pt-stats dt { font-size: .8rem; color: var(--ink-soft); }
+
+.pt-toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%);
+  z-index: 20; max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 10px;
+  background: var(--ink); color: var(--yard); font-weight: 650; font-size: .95rem; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .18s;
+}
+.pt-toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pt-toast { transition: none; } }
+
+/* vertical room for the question (a painting must never need scrolling inside the slip): the stages and difficulties
+   are in the menu, and an empty question marker takes no space */
+.pt-maths { display: none !important; }
+.pt-ask:empty { display: none; }
+/* Pass as narrow as its word; Bet takes the rest, its lettering set closer so the stake and the return fit */
+.pt-buttons { grid-template-columns: auto 1fr; }
+.pt-buttons #passBtn { padding-left: .9rem; padding-right: .9rem; }
+.pt-buttons #betBtn { font-size: .78rem; letter-spacing: .02em; font-stretch: 100%; padding-left: .5rem; padding-right: .5rem; white-space: nowrap; }
+/* held sideways (#app.beside): the ticket on the left, the picture as large as the column lets it be; beside it where
+   you stand (the question, the pot) at the top, and the stake or the result at the bottom, where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.punt { --beside: 24rem; grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+  .pt-partner { grid-column: 2; grid-row: 2; }
+  .pt-ledger { grid-column: 2; grid-row: 3; margin-top: 1.2rem; }
+  .pt-avg { grid-column: 2; grid-row: 4; }
+  .pt-slip { grid-column: 1; grid-row: 2 / -1; margin-top: 1.6rem; }
+  .pt-picture img { max-height: 44vh; max-height: 44svh; }
+  .pt-betting { grid-column: 2; grid-row: 6; }
+  .pt-result { grid-column: 2; grid-row: 5 / 7; align-self: end; max-height: 100%; }
+}
+
+/* a painting takes the room the question and its answers leave, never more: the slip is a column, the picture its one
+   stretchy part, and the image is contained in it (a drop shadow follows the painting's own edges) */
+.pt-slip-body { display: flex; flex-direction: column; }
+.pt-slip-body > * { flex: none; }
+.pt-slip-body > .pt-picture:not([hidden]) { flex: 1 1 0; min-height: 5rem; display: grid; grid-template-rows: minmax(0, 1fr) auto; place-items: center; }
+.pt-picture img { width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; border-radius: 0; box-shadow: none; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .22)); }
+
+/* more room on short screens: the running average is in the menu (About), and the slip sets its question and answers
+   a little tighter */
+.pt-avg { display: none !important; }
+@media (max-height: 720px) {
+  .pt-slip-body { padding: .75rem .85rem .8rem; }
+  .pt-prompt { margin-bottom: .55rem; }
+  .pt-prompt.long { font-size: 1.12rem; line-height: 1.25; }
+  .pt-options { gap: .4rem; }
+  .pt-options > * { min-height: 2.75rem; padding-top: .35rem; padding-bottom: .35rem; font-size: .92rem; }
+  .pt-slip-body > .pt-picture:not([hidden]) { min-height: 3rem; }   /* the painting gives way before anything scrolls */
+}
+
+/* a name-it question with typing on: one box across the options' width to type the name in (16px or more, so a phone
+   doesn't zoom in on it); at the reveal, the name in the winning colour, and what was typed if it was spelled otherwise */
+.pt-typed { grid-column: 1 / -1; min-height: 3.25rem; padding: .5rem .8rem; border-radius: 10px; border: 2px solid var(--pt-ticket-edge);
+  background: var(--sheet); color: var(--ink); font: 700 1.05rem var(--font); }
+.pt-typed:focus { outline: none; border-color: var(--pt-pick); box-shadow: inset 0 0 0 2px var(--pt-pick); }
+.pt-typed:disabled { opacity: .7; }
+.pt-typed-result { grid-column: 1 / -1; display: flex; flex-direction: column; justify-content: center; gap: .2rem; min-height: 3.25rem;
+  padding: .5rem .8rem; border-radius: 10px; border: 2px solid var(--pt-win); background: color-mix(in srgb, var(--pt-win) 16%, var(--sheet)); }
+.pt-typed-result b { font-size: 1.05rem; }
+.pt-typed-result .close, .pt-typed-result .wrong { font-size: .85rem; font-weight: 700; }
+.pt-typed-result .close { color: var(--ink-soft); }
+.pt-typed-result .wrong { color: var(--pt-loss); }
+
+/* at a table (README, Punt at a table). The line under the header: everyone else in their seat's colour, their pot,
+   and a tick once they've staked; away in the soft ink. */
+.pt-partner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-partner .ld { margin-right: .35rem; }
+.pt-who .standings-dot { display: inline-block; margin-right: .25rem; vertical-align: .05em; }
+.pt-who.away { color: var(--ink-soft); }
+/* at the reveal, a dot in each player's colour on the option they picked, set on its top edge clear of the words */
+#app.punt.at-table .pt-option { position: relative; }
+.pt-pickers { position: absolute; right: .5rem; top: -.3rem; display: flex; gap: .2rem; }
+.pt-pickers:empty { display: none; }
+.pt-pickers i { width: .55rem; height: .55rem; border-radius: 50%; box-shadow: 0 0 0 2px var(--sheet); }
+/* the standings after a question and at the end: duel.css's rows, set closer so six fit over the notes */
+.pt-standings { --duel-in: var(--pt-turf); }
+.pt-standings .duel-rank { margin: 0 0 .55rem; gap: .2rem; }
+.pt-standings .duel-rank li { padding: .22rem .6rem; align-items: center; line-height: 1.2; }
+.pt-standings .standings-who small { font-size: .74rem; }
+@media (max-height: 720px) {
+  .pt-standings .duel-rank li { padding-top: .12rem; padding-bottom: .12rem; }
+}
+#doneTable .duel-rank { margin-top: .2rem; }
+.pt-done-solo { display: block; margin: .7rem auto 0; }
+/* who the table waits for, on the button that waited: a long list of names gives way at its end */
+#betBtn, #nextBtn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

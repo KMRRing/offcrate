@@ -1,0 +1,134 @@
+/* Spot: sums fall down a dark field; their answers wait on a shelf of round tokens below. Orange is the house
+   colour. The field and the shelf share one full-height column, so the game fills the phone. */
+:root {
+  --sp-or: #B8492A;          /* vermilion enamel */
+  --sp-or-soft: color-mix(in srgb, var(--sp-or) 15%, var(--sheet));
+  --sp-field: #1C2A34;
+  --sp-card: #F5EFE1;
+  --sp-card-ink: #1C2A34;
+  --sp-good: #2F7D5B;
+  --sp-bad: #A8382B;
+  --sp-token: var(--tile);
+  --sp-token-edge: var(--tile-edge);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --sp-or: #E8805A; --sp-field: #0B1218; --sp-good: #7FC2A8; --sp-bad: #E8806F; }
+}
+/* night, set in Settings */
+html[data-mode="night"] { --sp-or: #E8805A; --sp-field: #0B1218; --sp-good: #7FC2A8; --sp-bad: #E8806F; }
+
+#app.spot { height: 100vh; height: 100svh; display: flex; flex-direction: column; gap: .5rem; overflow: hidden; position: relative; }
+.sp-mark { display: inline-block; }
+.sp-mark svg { width: 100%; height: 100%; display: block; }
+.sp-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .5rem; }
+.sp-partner { margin: 0; font-size: .88rem; color: var(--ink-soft); }
+.sp-partner a { color: inherit; font-weight: 700; }
+
+.sp-hud { display: flex; justify-content: space-between; align-items: center; min-height: 2.2rem; }
+.sp-score b { font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.sp-score small { margin-left: .45rem; font-size: .9rem; font-weight: 800; color: var(--sp-or); }
+.sp-right { display: flex; align-items: center; gap: .6rem; }
+.sp-level { font-size: .78rem; font-weight: 800; color: var(--ink-soft); letter-spacing: .02em; }
+.sp-lives { display: flex; gap: .3rem; }
+/* the modifier: apply it to every result before anything else */
+.sp-mod { display: inline-flex; align-items: center; gap: .35rem; padding: .15rem .7rem; border-radius: 3px; background: var(--sp-or); color: #fff; }
+.sp-mod small { font-size: .68rem; font-weight: 800; text-transform: var(--caps); letter-spacing: calc(.05em * var(--track)); opacity: .85; }
+.sp-mod b { font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sp-mod.new { animation: pop .3s ease-out; }
+.sp-sum em { position: absolute; top: -.45rem; right: -.3rem; padding: .05rem .4rem; border-radius: 3px; background: var(--sp-or); color: #fff;
+  font-size: .72rem; font-weight: 800; font-style: normal; }
+.sp-life { width: .875rem; height: .875rem; border-radius: 50%; background: var(--sp-or); transition: transform .2s, opacity .2s; }
+.sp-life.gone { background: none; box-shadow: inset 0 0 0 2px var(--sp-token-edge); }
+.sp-life.hit { animation: hit .5s; }
+@keyframes hit { 30% { transform: scale(1.8); } }
+
+/* the field: sums drift from top to bottom; the closer to the bottom, the hotter */
+.sp-field { position: relative; flex: 1; min-height: 12rem; border-radius: 8px; border: 1.5px solid var(--brass); background: var(--sp-field); overflow: hidden;
+  box-shadow: inset 0 -40px 40px -30px rgba(217, 83, 30, .35); }
+.sp-sum { position: absolute; left: 0; top: 0; width: 31%; padding: .55rem .3rem .65rem; border-radius: 6px; text-align: center;
+  background: var(--sp-card); color: var(--sp-card-ink); font-weight: 800; font-size: 1.25rem; font-variant-numeric: tabular-nums;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .3); will-change: transform; }
+.sp-sum i { overflow: hidden; }
+.sp-sum i { position: absolute; left: 0; bottom: 0; height: .25rem; background: var(--sp-or); }
+.sp-sum.late { background: #FFD9C7; }
+.sp-sum.tappable { width: 36%; padding: .8rem .3rem .9rem; font: inherit; font-size: 1.35rem; font-weight: 800; border: 0; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.sp-sum.good { background: var(--sp-good); color: #fff; }
+.sp-sum.bad { background: var(--sp-bad); color: #fff; }
+.sp-burst { position: absolute; left: 0; top: 0; width: 34%; padding: .55rem .3rem; text-align: center; font-weight: 800; font-size: 1.15rem;
+  color: #fff; pointer-events: none; animation: burst .7s ease-out forwards; }
+.sp-burst.good { color: #7EE2A6; }
+.sp-burst.bad { color: #FF8C7E; }
+@keyframes burst { to { opacity: 0; transform: var(--at) translateY(-1.75rem) scale(1.15); } }
+
+/* the shelf: eight fixed places, so your thumb learns them */
+.sp-shelf { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; padding-bottom: max(.6rem, env(safe-area-inset-bottom, 0px)); }
+.sp-token { aspect-ratio: 1.15; border-radius: 6px; border: 2px solid var(--sp-token-edge); background: var(--sp-token); color: var(--ink);
+  font: inherit; font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent; }
+.sp-token:empty { background: none; border-style: dashed; cursor: default; }
+.sp-token.new { animation: pop .22s ease-out; }
+.sp-token.good { background: var(--sp-good); border-color: var(--sp-good); color: #fff; }
+.sp-token.bad { background: var(--sp-bad); border-color: var(--sp-bad); color: #fff; animation: shake .35s; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+@keyframes shake { 20%, 60% { transform: translateX(-.375rem); } 40%, 80% { transform: translateX(.375rem); } }
+
+/* start, countdown and the end of a run */
+.sp-overlay { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; border-radius: 8px; background: rgba(16, 24, 31, .55); z-index: 5; }
+.sp-overlay[hidden] { display: none; }
+.sp-card { width: min(22rem, 100%); padding: 1.3rem; border-radius: 8px; background: var(--sheet); border: 1px solid var(--tile-edge); box-shadow: inset 0 0 0 4px var(--sheet), inset 0 0 0 5px var(--rule); color: var(--ink); text-align: center;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, .35); display: grid; gap: .7rem; }
+.sp-card h2 { margin: 0; font-size: 1.6rem; font-weight: 800; }
+.sp-card p { margin: 0; color: var(--ink-soft); line-height: 1.4; }
+.sp-card .sp-big { font-size: 4.5rem; font-weight: 800; color: var(--sp-or); line-height: 1; }
+/* held sideways (#app.wide): the field takes the left, all the height under the score; the shelf of answers stands
+   beside it, two across and low, where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  .sp-main { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; grid-template-rows: auto minmax(0, 1fr); column-gap: 1.6rem; }
+  .sp-hud { grid-column: 1 / -1; }
+  .sp-field { grid-column: 1; grid-row: 2; min-height: 0; }
+  .sp-shelf { grid-column: 2; grid-row: 2; grid-template-columns: repeat(2, 1fr); align-content: end; }
+}
+.sp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+.sp-stats div { padding: .5rem .2rem; border-radius: 5px; background: var(--yard); }
+.sp-stats b { display: block; font-size: 1.3rem; font-weight: 800; }
+.sp-stats span { font-size: .75rem; color: var(--ink-soft); }
+.sp-go { min-height: 3.125rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); text-transform: var(--caps); letter-spacing: calc(.07em * var(--track)); font-stretch: 106%; outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; font: inherit; font-size: 1.05rem; font-weight: 800; cursor: pointer; }
+.sp-go.quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); outline: 0; }
+.sp-go:disabled { opacity: .45; cursor: default; }
+
+.sp-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 20;
+  max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.sp-toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .sp-token.new, .sp-token.bad, .sp-burst, .sp-life.hit { animation: none; } }
+
+/* at a table (README, Spot at a table). The line under the header: everyone else in their seat's colour, Versus with
+   their score as they play */
+.sp-partner { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-partner .ld { margin-right: .35rem; }
+.sp-who b { color: var(--ink); }
+.sp-who .standings-dot { display: inline-block; margin-right: .3rem; vertical-align: .05em; }
+.sp-who.away { opacity: .7; }
+/* a table's card (its standings, who's here) scrolls inside itself on a short screen rather than leave the field */
+.sp-card { max-height: calc(100% - 2.6rem); overflow-y: auto; overscroll-behavior: contain; }
+/* Versus or Co-op, in the lobby: a segmented pair, the one chosen a plate */
+.sp-modes { display: grid; grid-template-columns: 1fr 1fr; border: 1.5px solid var(--brass); border-radius: 4px; overflow: hidden; }
+.sp-modes button { min-height: 2.6rem; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 800; font-size: .9rem;
+  text-transform: var(--caps); letter-spacing: calc(.07em * var(--track)); cursor: pointer; }
+.sp-modes button + button { border-left: 1.5px solid var(--brass); }
+.sp-modes button[aria-checked="true"] { background: var(--plate); color: var(--plate-ink); }
+.sp-card .sp-seats { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem .9rem; color: var(--ink); font-weight: 750; }
+.sp-standings { --duel-in: var(--sp-or); text-align: left; }
+.sp-standings .duel-rank { margin: 0; gap: .2rem; }
+.sp-standings .duel-rank li { padding: .22rem .6rem; align-items: center; }
+.sp-card .sp-wait { display: flex; align-items: center; justify-content: center; gap: .1rem; font-size: .9rem; }
+/* the standings card: a column whose list scrolls inside it when six don't fit, so Play again is never out of reach */
+.sp-card.fill { display: flex; flex-direction: column; overflow: hidden; }
+.sp-card.fill > * { flex: none; }
+.sp-card.fill > .sp-standings { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.sp-card .sp-link { justify-self: center; align-self: center; padding: .2rem .5rem; font: inherit; font-size: .95rem; }
+/* co-op has no shelf: held sideways, the field takes the shelf's column as well */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.spot.coop .sp-field { grid-column: 1 / -1; }
+}

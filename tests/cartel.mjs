@@ -1,0 +1,255 @@
+// Cartel: computer players play whole games against each other. Every game must finish, nobody's move may be
+// refused by the referee, and the rational player should win more than its share. Then the rules one by one, and
+// Cartel at a table (cartel-rules.js on seats.js): whole games through a model of the database, whose decision it is,
+// what the database drops coming back. Run: node tests/cartel.mjs [games]
+const E = await import("../cartel-engine.js");
+const A = await import("../cartel-ai.js");
+// 100 games by default: with fewer, one personality's win rate swings by ±10 points by chance alone
+const ids = Object.keys(A.PERSONAS), games = Number(process.argv[2] || 100);
+let finished = 0, refused = 0, turns = 0;
+const wins = {}, seats = {};
+for (let g = 0; g < games; g++) {
+  // four of the five, in a shuffled order: who sits after whom matters (the next player answers untargeted claims)
+  const order = [...ids].map((id, k) => ({ id, key: Math.sin(g * 97.13 + k * 13.7) })).sort((a, b) => a.key - b.key).map(x => x.id);
+  const personas = order.slice(0, 4);
+  const s = E.newGame(5000 + g, personas.map(p => ({ name: A.PERSONAS[p].name, persona: p })));
+  const ais = personas.map((p, i) => new A.Player(i, 4, p, 900 + g * 4 + i));
+  let freeAsked = -1, askedAt = -1;
+  for (let guard = 0; !s.over && guard < 4000; guard++) {
+    for (const ai of ais) ai.sync(s, E.seen);
+    try {
+      if (s.pending?.type === "proof") E.keepProof(s, ais[s.pending.claimant].keepProof(s));   // a proven claim's die: kept or put back
+      else if (s.pending?.type === "block") E.respondBlock(s, ais[s.pending.challenger].challengeBlock(s));
+      else if (s.pending) E.respond(s, ais[s.pending.challenger].challenge(s));
+      else if (s.step === "act" && !s.freeUsed && freeAsked !== s.moves) {
+        freeAsked = s.moves;
+        const d = ais[s.turn].free(s);
+        if (d != null) E.freeReroll(s, d);
+      }
+      else if (s.step === "bid" && !s.askUsed && askedAt !== s.moves) {
+        askedAt = s.moves;
+        const q = ais[s.turn].ask(s);
+        if (q) E.freeAsk(s, q.target, q.question);
+      }
+      else if (s.step === "act") E.act(s, ais[s.turn].action(s));
+      else E.bid(s, ais[s.turn].bid(s));
+    } catch (e) { refused++; console.log(`game ${g}: refused (${e.message})`); break; }
+  }
+  if (!s.over) continue;
+  finished++;
+  turns += s.moves;
+  wins[personas[s.over.winner]] = (wins[personas[s.over.winner]] || 0) + 1;
+  personas.forEach(p => { seats[p] = (seats[p] || 0) + 1; });
+}
+const rate = id => (wins[id] || 0) / seats[id];
+console.log(`${finished}/${games} games finished, ${refused} refused moves, ${(turns / finished).toFixed(1)} turns a game`);
+console.log("win rates:", ids.map(id => `${id} ${Math.round(100 * rate(id))}%`).join(", "));
+// the Quant should hold its own (a fair share is 25%; it and the Hedger usually lead)
+const bad = finished !== games || refused > 0 || rate("quant") < 0.18;
+console.log(bad ? "problems" : "all games check out");
+if (bad) process.exitCode = 1;
+
+// the rules, one by one, on games set up by hand
+{
+  const check = (ok, what) => { console.log(`${ok ? "ok  " : "FAIL"} ${what}`); if (!ok) process.exitCode = 1; };
+  const setup = (faces0, faces1) => {
+    const s = E.newGame(1, [{ name: "A", persona: "quant" }, { name: "B", persona: "quant" }, { name: "C", persona: "quant" }]);
+    const [a, b] = s.players;
+    a.dice.forEach((d, k) => { d.face = faces0[k] ?? 2; d.open = false; });
+    b.dice.forEach((d, k) => { d.face = faces1[k] ?? 2; d.open = false; });
+    s.turn = 0; s.step = "act"; s.bid = null; s.pending = null; s.freeUsed = false;
+    return s;
+  };
+  const plainOf = p => E.plain(p).length;
+  // a steal blocked honestly (B's gold shows Syndic), challenged by the thief: the thief pays 3, nothing is stolen
+  let s = setup([3, 1], [5, 1]);
+  E.act(s, { type: "claim", ability: "steal", target: 1 });
+  E.respond(s, { block: 5 });
+  E.respondBlock(s, true);
+  check(plainOf(s.players[0]) === 0 && plainOf(s.players[1]) === 6 && E.gold(s.players[0]).length === 2, "a true block, challenged: the thief pays the blocker 3 and steals nothing");
+  // a bluffed block, challenged: the blocker pays 2, then the steal goes ahead
+  s = setup([3, 1], [2, 1]);
+  E.act(s, { type: "claim", ability: "steal", target: 1 });
+  E.respond(s, { block: 5 });
+  E.respondBlock(s, true);
+  check(plainOf(s.players[1]) === 0 && plainOf(s.players[0]) === 6 && E.gold(s.players[1]).length === 2, "a bluffed block, challenged: the blocker pays 3, and the steal finds nothing left");
+  // a block accepted: nothing changes hands
+  s = setup([3, 1], [2, 1]);
+  E.act(s, { type: "claim", ability: "steal", target: 1 });
+  E.respond(s, { block: 5 });
+  E.respondBlock(s, false);
+  check(plainOf(s.players[0]) === 3 && plainOf(s.players[1]) === 3 && s.step === "bid", "an accepted block: nothing moves, and the thief goes on to bid");
+  // a proven claim: its owner keeps the die shown or puts it back (rerolled unseen); either way the claim takes effect
+  {
+    const after = (s, n) => s.events.slice(n).map(e => e.t);
+    s = setup([2, 6], [3, 4]);
+    E.act(s, { type: "claim", ability: "bank" });
+    let n = s.events.length;
+    E.respond(s, "challenge");
+    check(s.pending?.type === "proof" && s.pending.claimant === 0 && s.pending.role === 2 && plainOf(s.players[1]) === 0,
+      "a challenged Mintmaster that's true: the challenger pays 3, and the claimant chooses what becomes of the proof");
+    E.keepProof(s, true);
+    check(after(s, n).join() === "challenge,pay,kept,banker" || (after(s, n).includes("kept") && after(s, n).indexOf("banker") > after(s, n).indexOf("kept")),
+      "kept shown: the die stays as it was shown, then the Mintmaster takes its 3");
+    check(E.gold(s.players[0]).map(d => d.face).join() === "2,6" && s.step === "bid" && !s.pending, "…and the turn goes on to the bid");
+    s = setup([2, 6], [3, 4]);
+    E.act(s, { type: "claim", ability: "bank" });
+    E.respond(s, "challenge");
+    n = s.events.length;
+    const proofId = s.pending.die;
+    E.keepProof(s, false);
+    const back = s.events.find(e => e.t === "putBack");
+    check(back && back.role === 2 && back.priv[0]?.faces && !("faces" in E.seen(back, 1)) && !E.gold(s.players[0]).find(d => d.id === proofId).open,
+      "put back: the die is rerolled unseen (only its owner sees the new face; the table hears which role went back)");
+    check(after(s, n).indexOf("banker") > after(s, n).indexOf("putBack") && s.step === "bid", "…and the Mintmaster still takes its 3");
+    // a proven block, put back: the block still stands
+    s = setup([3, 1], [5, 1]);
+    E.act(s, { type: "claim", ability: "steal", target: 1 });
+    E.respond(s, { block: 5 });
+    E.respondBlock(s, true);
+    check(s.pending?.type === "proof" && s.pending.claimant === 1, "a true block, challenged: the blocker chooses what becomes of its Syndic");
+    E.keepProof(s, false);
+    check(plainOf(s.players[0]) === 0 && plainOf(s.players[1]) === 6 && s.step === "bid" && !s.events.some(e => e.t === "trader"),
+      "…put back, the steal stays blocked and the thief goes on to bid");
+    // the other versions of the rule, for comparison: kept always, or put back always (Coup)
+    E.RULES.provenReroll = "keep";
+    s = setup([2, 6], [3, 4]);
+    E.act(s, { type: "claim", ability: "bank" }); E.respond(s, "challenge");
+    check(!s.pending && !s.events.some(e => e.t === "putBack") && E.gold(s.players[0]).map(d => d.face).join() === "2,6", "RULES.provenReroll \"keep\": the proof stays shown, no choice");
+    E.RULES.provenReroll = "must";
+    s = setup([2, 6], [3, 4]);
+    E.act(s, { type: "claim", ability: "bank" }); E.respond(s, "challenge");
+    check(!s.pending && s.events.some(e => e.t === "putBack") && s.events.some(e => e.t === "banker"), "RULES.provenReroll \"must\": the proof goes back at once, as in Coup");
+    E.RULES.provenReroll = "may";
+  }
+  // using a role doesn't reroll the gold die any more
+  s = setup([2, 6], [2, 1]);
+  const goldBefore = E.gold(s.players[0]).map(d => d.face).join();
+  E.act(s, { type: "claim", ability: "bank" });
+  E.respond(s, "allow");
+  check(E.gold(s.players[0]).map(d => d.face).join() === goldBefore && plainOf(s.players[0]) === 6, "Mintmaster takes 3 and the gold dice stay as they were");
+  // a sanction: 4 dice paid up front, and the target loses a gold die
+  s = setup([6, 1, 2, 2, 2], [2, 2]);
+  E.plain(s.players[0]).length;                                   // A has 3 plain: give A a fourth
+  E.act(s, { type: "take" }); s.turn = 0; s.step = "act";
+  E.act(s, { type: "claim", ability: "sanction", target: 1 });
+  check(plainOf(s.players[0]) === 0, "a sanction is paid for up front: 4 dice to the bank");
+  E.respond(s, "allow");
+  check(E.gold(s.players[1]).length === 1, "an unblocked sanction takes a gold die");
+  // blocked by a true Syndic: the dice are spent, no gold is lost
+  s = setup([6, 1], [5, 2]);
+  E.act(s, { type: "take" }); s.turn = 0; s.step = "act";
+  E.act(s, { type: "claim", ability: "sanction", target: 1 });
+  E.respond(s, { block: 5 });
+  E.respondBlock(s, false);
+  check(E.gold(s.players[1]).length === 2 && plainOf(s.players[0]) === 0, "a sanction blocked by Syndic: the 4 dice are gone and nobody loses gold");
+  // a bluffed sanction, challenged: no gold lost, and the bluffer pays 2 on top of the 4
+  s = setup([2, 1], [2, 2]);
+  for (let k = 0; k < 3; k++) { E.act(s, { type: "take" }); s.turn = 0; s.step = "act"; }   // 6 plain: 4 for the sanction
+  E.act(s, { type: "claim", ability: "sanction", target: 1 });
+  E.respond(s, "challenge");
+  check(E.gold(s.players[1]).length === 2 && plainOf(s.players[0]) === 0 && E.gold(s.players[0]).length === 1, "a bluffed sanction caught: the target keeps its gold; the bluffer, 2 dice short of the 3, pays them and loses a gold die");
+  let blockedWrong = false;
+  s = setup([6, 1], [3, 2]);
+  E.act(s, { type: "take" }); s.turn = 0; s.step = "act";
+  E.act(s, { type: "claim", ability: "sanction", target: 1 });
+  try { E.respond(s, { block: 3 }); } catch { blockedWrong = true; }
+  check(blockedWrong, "only Syndic blocks a sanction");
+  // only Syndic blocks a steal (Privateer and Clerk don't)
+  for (const role of [3, 4]) {
+    s = setup([3, 1], [role, 1]);
+    E.act(s, { type: "claim", ability: "steal", target: 1 });
+    let refusedBlock = false;
+    try { E.respond(s, { block: role }); } catch { refusedBlock = true; }
+    check(refusedBlock, `${role === 3 ? "Privateer" : "Clerk"} doesn't block a steal`);
+  }
+  // an inquiry: the referee answers a real Alderman, and only a real one
+  s = setup([6, 1], [2, 2]);
+  E.act(s, { type: "claim", ability: "inquiry", picks: { face: 4 } });
+  E.respond(s, "allow");
+  let inq = s.events.filter(e => e.t === "inquiry").pop();
+  check(inq.priv[0].count === E.tableCount(s, 4), "a real Alderman's inquiry gets the count");
+  s = setup([2, 1], [2, 2]);
+  E.act(s, { type: "claim", ability: "inquiry", picks: { face: 4 } });
+  E.respond(s, "allow");
+  inq = s.events.filter(e => e.t === "inquiry").pop();
+  check(inq.priv[0].count == null && inq.priv[0].unanswered && !("count" in E.seen(inq, 1)), "a bluffed inquiry gets no answer, and nobody else can tell");
+  // the free question: after your move, before your bid; answered both ways; once a turn
+  s = setup([2, 2, 4, 4, 4], [2, 2, 4, 3, 3]);
+  let early = false;
+  try { E.freeAsk(s, 1, { type: "count", f: 4 }); } catch { early = true; }
+  check(early, "no question before your move: it can't make a steal or sanction safe");
+  E.act(s, { type: "take" });
+  E.freeAsk(s, 1, { type: "count", f: 4 });
+  const asked = s.events[s.events.length - 1];
+  const fours = s.players[0].dice.filter(d => d.face === 4).length;
+  check(asked.priv[0].answer === 1 && asked.priv[1].answer === fours && s.step === "bid", "a question after your move: each side learns the other's answer, and the bid is still to come");
+  let twice = false;
+  try { E.freeAsk(s, 1, { type: "odd" }); } catch { twice = true; }
+  check(twice, "one free question a turn");
+  // the Envoy's reroll: a free move before your move, never after it
+  s = setup([5, 1], [2, 1]);
+  const shown = E.plain(s.players[0])[0];
+  shown.open = true;                                   // a die the table has seen
+  E.freeReroll(s, shown.id);
+  E.respond(s, "allow");
+  check(s.step === "act" && s.turn === 0 && !E.plain(s.players[0]).find(d => d.id === shown.id).open, "the Envoy's reroll hides a seen die before your move, and the move is still yours");
+  let refused = false;
+  try { E.freeReroll(s, shown.id); } catch { refused = true; }
+  check(refused, "the free reroll only once a turn");
+  s = setup([5, 1], [2, 1]);
+  E.act(s, { type: "take" });
+  let late = false;
+  try { E.freeReroll(s, E.plain(s.players[0]).find(d => d.open).id); } catch { late = true; }
+  check(late, "no Envoy's reroll after your move: a die that just landed face up stays seen for a round");
+  // a lost call costs 3; short of 3, a gold die goes too
+  s = setup([2, 2], [2, 2]);
+  s.step = "bid";
+  E.bid(s, { q: 30, f: 6 });           // A bids something impossible
+  s.step = "bid";
+  E.bid(s, { call: true });            // B calls
+  check(plainOf(s.players[0]) === 0 && plainOf(s.players[1]) === 6, "a lost call: the bidder pays the caller 3 dice");
+  s.turn = 0; s.step = "bid"; s.bid = null;
+  E.bid(s, { q: 30, f: 6 });
+  s.turn = 1; s.step = "bid";
+  E.bid(s, { call: true });
+  check(E.gold(s.players[0]).length === 1, "short of 3 dice to pay, a gold die goes too");
+}
+
+// Cartel at a table (cartel-rules.js on seats.js): whole games of computer players through the runner's own steps, the
+// state through a model of the database after every move (it keeps no empty list and no null, and gives a map of
+// numbers back as a list with gaps), every move the referee's
+{
+  const check = (ok, what) => { console.log(`${ok ? "ok  " : "FAIL"} ${what}`); if (!ok) process.exitCode = 1; };
+  const { rules } = await import("../cartel-rules.js");
+  const { newRecord, applyMove, botMove } = await import("../seats.js");
+  const { roundTrip } = await import("./rtdb.js");
+  let done = 0, moves = 0, refusedAt = null;
+  for (let k = 0; k < 4; k++) {
+    let G = newRecord(rules, { seats: 3 + (k % 2), options: { opponents: ["quant", "gambler"] }, seed: 7000 + k });
+    for (let guard = 0; guard < 3000; guard++) {
+      const st = rules.restore(roundTrip(G.state));
+      if (rules.over(st)) { done++; break; }
+      const seat = rules.toMove(st), m = botMove(rules, { ...G, state: st }, seat), r = applyMove(rules, { ...G, state: st }, seat, m);
+      if (r.error) { refusedAt = `${r.error}: ${JSON.stringify(m)}`; break; }
+      G = r.G;
+      moves++;
+    }
+  }
+  check(done === 4 && !refusedAt, `four games at tables of three and four played out through the database (${moves} moves)${refusedAt ? `; refused: ${refusedAt}` : ""}`);
+  const G = newRecord(rules, { seats: 4, options: { opponents: ["hedger", "sceptic", "wildcat"] }, seed: 99 });
+  check(G.state.players.slice(1).map(p => p.persona).join() === "hedger,sceptic,wildcat" && !["hedger", "sceptic", "wildcat"].includes(G.state.players[0].persona) && typeof G.state.rstate === "number" && !("r" in G.state),
+    "the opponents chosen sit after you, your seat has a personality for when the computer plays it, and the random stream is kept as a number");
+  const st = rules.restore(roundTrip(G.state));
+  const s = structuredClone(st);
+  s.pending = { type: "challenge", claimant: 0, challenger: 2 };
+  const p = structuredClone(st);
+  p.pending = { type: "proof", claimant: 3 };
+  check(rules.toMove(st) === st.turn && rules.toMove(s) === 2 && rules.toMove(p) === 3 && rules.toMove({ ...st, over: { winner: 1 } }) === null,
+    "whose decision it is: the turn's player, a claim's challenger, a proven claimant's, nobody's once it's over");
+  const back = rules.restore({ ...st, players: st.players.map((x, i) => (i === 1 ? { ...x, dice: undefined, out: true } : x)), events: [...st.events, { n: 99, t: "banker", p: 0 }, { n: 100, t: "trader", p: 1, target: 0, none: true }] });
+  check(Array.isArray(back.players[1].dice) && back.events.at(-2).dice.length === 0 && back.events.at(-1).lost.length === 0 && back.bid === null,
+    "what the database drops comes back: a hand that's out, a banker's empty take, a steal that got nothing, no bid standing");
+  const said = rules.act(structuredClone(st), st.turn, { t: "bid", q: 1, f: 2 });
+  check(typeof said === "string" && /time to bid/i.test(said), `a move out of turn is refused in words ("${said}")`);
+}

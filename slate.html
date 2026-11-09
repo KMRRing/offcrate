@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Slate</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="slate.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="glyph full titled beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon g-mark" aria-hidden="true"></span>Slate</button></h1>
+    <div class="top-right">
+      <p id="lives" class="g-lives" role="img" hidden></p>
+      <button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button>
+    </div>
+  </header>
+
+  <div id="status" class="g-status" hidden>
+    <p id="partner" class="g-partner" hidden></p>
+  </div>
+
+  <div id="board" class="g-board" aria-label="Board"></div>
+
+  <div id="dock" class="g-dock">
+    <div id="actions" class="g-actions">
+      <button id="fieldsBtn" class="btn" aria-haspopup="dialog">Fields</button>
+      <button id="clearBtn" class="btn">Clear</button>
+      <button id="checkBtn" class="btn">Check</button>
+      <button id="hintBtn" class="btn">Suggest</button>
+    </div>
+    <div id="kbd" class="g-kbd" aria-label="Keyboard"></div>
+  </div>
+</div>
+
+<dialog id="defineDlg" class="sheet" aria-label="Definitions">
+  <div class="pick-head"><h2>Definitions</h2><button class="btn" type="button" id="defineClose">Close</button></div>
+  <div id="defineBody" class="g-defs"></div>
+</dialog>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2 id="menuTitle">Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<dialog id="fieldsDlg" class="sheet" aria-label="Fields">
+  <div class="pick-head"><h2>Fields</h2><span id="revealsBadge" class="g-reveals" hidden></span><button class="btn" type="button" id="fieldsClose">Close</button></div>
+  <div id="fields" class="g-fields"></div>
+</dialog>
+
+<dialog id="doneDlg" class="sheet" aria-label="Board finished">
+  <div class="pick-head"><h2 id="doneTitle"></h2><button class="btn" type="button" id="doneClose">Close</button></div>
+  <dl id="doneStats" class="g-stats"></dl>
+  <div id="doneOurs"></div>
+  <ul id="doneRules" class="g-rules"></ul>
+  <button class="btn primary wide" type="button" id="doneNew">New board</button>
+</dialog>
+
+<dialog id="nameDlg" class="sheet" aria-label="Your name">
+  <form method="dialog" id="nameForm">
+    <label for="nameInput">Your name, so the others know who's playing</label>
+    <input id="nameInput" maxlength="16" autocomplete="nickname" required>
+    <button class="btn primary wide" type="submit">Continue</button>
+  </form>
+</dialog>
+
+<p id="toast" class="g-toast" role="status" aria-live="polite"></p>
+<script type="module" src="slate.js"></script>
+<script type="module" src="sfx.js"></script>
+</body>
+</html>

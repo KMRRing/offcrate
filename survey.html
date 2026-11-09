@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Survey</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="duel.css">
+<link rel="stylesheet" href="survey.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="survey full titled fit-screen beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon sv-mark" aria-hidden="true"></span>Survey</button></h1>
+    <div class="top-right">
+      <button id="levelBtn" class="pick sv-lvbtn" aria-haspopup="dialog" hidden>Level</button>
+      <button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button>
+    </div>
+  </header>
+
+  <div class="sv-strip full-pull">
+    <span class="sv-score">Score <b id="score">0:00</b><small id="penalty"></small></span>
+    <span id="parWrap" class="sv-par" hidden>Par <b id="par"></b></span>
+    <span class="sv-left">Rock left <b id="left">0</b></span>
+    <span id="rival" class="sv-rival" hidden></span>
+  </div>
+
+  <section class="sv-card sv-sky fit-grow fit-box" aria-label="The block of rock">
+    <div id="stage" class="sv-stage"></div>
+    <button id="viewReset" class="sv-reset" type="button" aria-label="Reset the view" title="Reset the view" hidden>&#8634;</button>
+  </section>
+
+  <section class="sv-side">
+    <div id="controls" class="sv-controls">
+      <p id="line" class="sv-line" aria-live="polite"></p>
+      <div class="sv-tools" id="tools" role="group" aria-label="Tool">
+        <button class="sv-tool" type="button" data-tool="chip" aria-pressed="true"><b>Chip</b><small>waste away</small></button>
+        <button class="sv-tool" type="button" data-tool="mark" aria-pressed="false"><b>Mark</b><small>keep as ore</small></button>
+        <button class="sv-tool" type="button" id="hintBtn"><b>Hint</b><small>+30 s</small></button>
+      </div>
+    </div>
+    <div id="result" class="sv-result" hidden>
+      <p class="sv-verdict" id="verdict"></p>
+      <button class="sv-go" type="button" id="nextBtn">Another block</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<p id="toast" class="sv-toast" role="status" aria-live="polite"></p>
+<script type="module" src="survey.js"></script>
+</body>
+</html>

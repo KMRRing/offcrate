@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Topple</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="topple.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="topple full fit-screen beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon tp-mark" aria-hidden="true"></span>Topple</button></h1>
+    <div class="top-right"><button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button></div>
+  </header>
+
+  <div class="tp-head full-pull">
+    <div class="tp-strip">
+      <span class="tp-score">Score <b id="score">0</b></span>
+      <span class="tp-kn"><span id="knock" class="tp-knock" aria-live="polite"></span><button id="skipBtn" class="tp-skip" type="button" hidden>Skip</button><span id="boost" class="tp-boost" title="The next knock scores 100% more" hidden>+100%</span></span>
+      <span id="bestBox" class="tp-best">Best <b id="best">0</b></span>
+      <span id="goalBox" class="tp-aim" hidden>Goal <b id="goal">0</b></span>
+    </div>
+    <!-- Levels: which level, how far the score has come to its goal and the two stars beyond, and the stars so far -->
+    <div id="meter" class="tp-meter" hidden>
+      <span id="lname" class="tp-lname"></span>
+      <span class="tp-bar" aria-hidden="true"><i id="fill"></i><u></u><u></u></span>
+      <span id="lstars" class="tp-lstars"></span>
+    </div>
+  </div>
+  <section id="table" class="tp-table fit-grow fit-box" aria-label="The table">
+    <div id="stage" class="tp-stage">
+      <svg id="over" class="tp-over" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+    </div>
+    <!-- a table of several floors: the one in play, highest at the top, with the dominoes on each -->
+    <div id="floors" class="tp-floors" role="group" aria-label="Floors" hidden></div>
+  </section>
+
+  <section class="tp-side">
+    <div id="tray" class="tp-tray">
+      <button class="tp-piece" type="button" data-slot="0"></button>
+      <button class="tp-piece" type="button" data-slot="1"></button>
+      <button class="tp-piece" type="button" data-slot="2"></button>
+    </div>
+    <div id="result" class="tp-result" hidden>
+      <p id="verdict" class="tp-verdict"></p>
+      <div class="tp-acts">
+        <button class="tp-go" type="button" id="againBtn">New game</button>
+        <button class="tp-go quiet" type="button" id="levelsBtn" hidden>Levels</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<!-- what a feature is and how it plays, with a little scene (topple-help-ui.js): when it first turns up, on a long press, from the menu -->
+<dialog id="tpHelp" class="sheet menu-sheet pauses tp-help" aria-labelledby="tpHelpName">
+  <div class="pick-head"><h2 id="tpHelpName"></h2><button class="icon-btn menu-x" type="button" id="tpHelpClose" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <div id="tpHelpStage" class="tp-hstage" role="img"></div>
+  <div id="tpHelpText" class="tp-htext"></div>
+  <div class="tp-hnav"><button class="btn" type="button" id="tpHelpBack">Back</button><span id="tpHelpAt" class="tp-hat"></span><button class="btn primary" type="button" id="tpHelpNext">Next</button></div>
+</dialog>
+
+<!-- the rainbow's bands, for the dominoes drawn flat to fill with -->
+<svg class="tp-defs" width="0" height="0" aria-hidden="true"><defs>
+  <linearGradient id="tp-rainbow" x1="0" y1="1" x2="0" y2="0">
+    <stop offset="0" stop-color="#c7332b"/><stop offset=".17" stop-color="#c7332b"/><stop offset=".17" stop-color="#ec7321"/><stop offset=".33" stop-color="#ec7321"/>
+    <stop offset=".33" stop-color="#f2cc33"/><stop offset=".5" stop-color="#f2cc33"/><stop offset=".5" stop-color="#409e57"/><stop offset=".67" stop-color="#409e57"/>
+    <stop offset=".67" stop-color="#3373cc"/><stop offset=".83" stop-color="#3373cc"/><stop offset=".83" stop-color="#734aa6"/><stop offset="1" stop-color="#734aa6"/>
+  </linearGradient>
+</defs></svg>
+
+<p id="toast" class="tp-toast" role="status" aria-live="polite"></p>
+<script type="module" src="topple.js"></script>
+</body>
+</html>

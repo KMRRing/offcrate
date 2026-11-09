@@ -1,0 +1,161 @@
+// Lode at a table, pure (lode.js plays it through together.js; tests/lode.mjs plays tables of it through the database's
+// round trip). One board for everyone at the table, the board itself kept in the room so every phone has the same
+// one, in one of two modes, chosen for the next board:
+//  - Team: one run for the table, the letters shared out (shares() in lode-engine.js): each player sees only their
+//    own, the others' sealed, so every word needs everyone. Anyone traces through any letters, sealed or not; what
+//    each traces shows on the others' boards as it grows, so the one who holds a letter can say what it is. A word
+//    found opens its letters to all. A seat nobody has, or whose player is away, has its letters open to everyone at
+//    the table, so a sleeping phone never holds the others up. Hints and the meter are the table's.
+//  - Race: everyone the same board on their own phone from the same moment, a run each, kept on the phone and reported
+//    here as it goes; the lowest score (time plus hints) wins.
+// Everything is kept by key (w3, s1, a word itself), never in a list by number, which the database reads back with holes.
+import { newRun, tidyRun, submit, useHint, giveUp, scoreOf, shares, geometry, SHAPES } from "./lode-engine.js";
+
+export const MOST = 6;                 // the most at one table (a party's)
+export const COUNTDOWN = 3000;         // ms from a board's deal to its start, so everyone starts together
+export const MODES = { team: "Team", race: "Race" };
+const list = x => Object.values(x || {}).filter(v => v != null);
+const people = n => Math.min(MOST, Math.max(2, Number(n) || 2));
+
+/** A board as the database gives it back (no nulls, no empty lists, lists maybe as objects), made whole. */
+export function tidyBoard(b) {
+  b.words = list(b.words).map(w => ({ text: w.text, shown: w.shown || w.text, hint: w.hint || "", d: w.d || 1, entity: w.entity ?? null, cells: list(w.cells).map(Number) }));
+  b.grade = { know: b.grade?.know || 0, find: b.grade?.find || 0, score: b.grade?.score || 0,
+    words: list(b.grade?.words).map(g => ({ turns: g.turns || 0, back: g.back || 0, lures: g.lures || 0, find: g.find || 0 })) };
+  b.title = { text: b.title?.text || "", d: b.title?.d || 1, word: b.title?.word ?? null, topic: b.title?.topic ?? null };
+  b.twice = b.twice || 0;
+  return b;
+}
+export const isTable = g => g?.v === 1 && typeof g.board?.letters === "string" && g.board.letters.length === geometry(SHAPES[g.board.shape] ? g.board.shape : "square").n && Number.isInteger(g.n);
+
+/** A new table with its first board. mode: "team" or "race". */
+export function freshTable(players, { board, mode = "team", people: n = 2, app = 1, now = Date.now() }) {
+  return { v: 1, app, created: now, people: people(n), players, n: 1, mode: MODES[mode] ? mode : "team", board, start: now + COUNTDOWN,
+    team: newRun(), by: {} };
+}
+/** The table as the database gives it back, made whole; changes it, and returns it. */
+export function tidy(g) {
+  tidyBoard(g.board);
+  g.mode = MODES[g.mode] ? g.mode : "team";
+  g.team = tidyRun(g.team || {});
+  g.by ||= {};
+  g.runs ||= {};
+  delete g.bot;                                  // a table dealt when a computer could race
+  return g;
+}
+
+// ---------- the team: who holds which letters ----------
+/** The seat holding each cell's letter, the table shared out among as many seats as it was dealt for. */
+export const holders = g => shares(g.board, g.people);
+/**
+ * Which letters a seat can read: its own, every found or shown word's, and those of a seat nobody at the table holds
+ * now (empty, or its player away). present: the seats whose players are here.
+ */
+export function readable(g, slot, present) {
+  const hold = holders(g), count = g.board.letters.length, open = new Uint8Array(count), run = g.team;
+  for (let c = 0; c < count; c++) open[c] = hold[c] === slot || !present.includes(hold[c]) ? 1 : 0;
+  for (const w of [...run.found, ...run.revealed]) for (const c of g.board.words[w].cells) open[c] = 1;
+  return open;
+}
+
+// ---------- who's here, and what they're tracing ----------
+/** The seats at the table now: seated, with this game open on a phone that's online (this device's own always). */
+export function presentSlots(g, here, me) {
+  return Object.entries(g?.players || {}).filter(([id, p]) => p && p.slot != null && (id === me || (here?.[id]?.game === "lode" && here[id].online !== false && p.online !== false)))
+    .map(([, p]) => p.slot).sort((a, b) => a - b);
+}
+/** A trace as a player's seat keeps it (written straight to the seat as it grows, not in the table's transaction): the
+ *  board it's on, and its cells. */
+export const traceText = (n, cells) => (cells?.length ? `${n}:${cells.join(".")}` : null);
+/** What the others here are tracing on this board now: [{ id, slot, name, cells }]. */
+export function tracesOf(g, here, me) {
+  const present = presentSlots(g, here, me);
+  return Object.entries(g?.players || {}).filter(([id, p]) => id !== me && p?.trace && present.includes(p.slot)).map(([id, p]) => {
+    const [n, cells] = String(p.trace).split(":");
+    return { id, slot: p.slot, name: p.name || "Player", cells: Number(n) === g.n ? String(cells || "").split(".").filter(Boolean).map(Number).filter(c => c >= 0 && c < g.board.letters.length) : [] };
+  }).filter(t => t.cells.length);
+}
+
+// ---------- the team's moves, each inside the table's transaction: false (or "moved") leaves it as it was ----------
+const on = (g, n) => g.n === n && g.mode === "team" && !g.team.done;
+/**
+ * A trace submitted for the team (engine's submit on the table's run): its outcome, with by (who found it). A word found
+ * keeps its finder; the board done, its time on the table's clock. "moved": another board by now.
+ */
+export function submitAt(g, { n, slot, cells, now }) {
+  if (!on(g, n)) return { kind: "moved" };
+  const out = submit(g.board, g.team, cells);
+  if (out.kind === "span" || out.kind === "theme") g.by[`w${out.w}`] = slot;
+  if (g.team.done) g.team.ms = Math.max(0, now - g.start);
+  return out;
+}
+/** A hint for the team, from the table's hints in hand. */
+export function hintAt(g, { n }) {
+  return on(g, n) ? useHint(g.board, g.team) : null;
+}
+/** The team gives up: every word left is shown. */
+export function giveUpAt(g, { n, now }) {
+  if (!on(g, n) || !giveUp(g.board, g.team)) return false;
+  g.team.ms = Math.max(0, now - g.start);
+  return true;
+}
+
+// ---------- the race: a run each, reported as it goes ----------
+export const runOf = (g, slot) => g.runs?.[`s${slot}`] || null;
+/** A player's run of this board begins: at the table's start, or now for one who comes to it late. */
+export function beginAt(g, { n, slot, now }) {
+  if (g.n !== n || g.mode !== "race" || runOf(g, slot)) return false;
+  g.runs[`s${slot}`] = { begun: Math.max(g.start, now), found: 0 };
+  return true;
+}
+/** What a run has come to: { found, hints, score, done, ms }. A finished run stands. */
+export function reportAt(g, { n, slot, run }) {
+  const r = runOf(g, slot);
+  if (g.n !== n || g.mode !== "race" || !r || r.done) return false;
+  const next = { ...r, found: run.found || 0, hints: run.hints || 0 };
+  if (run.done) Object.assign(next, { done: true, ms: Math.max(0, Math.round(run.ms || 0)), score: run.score, gave: !!run.gave });
+  if (JSON.stringify(next) === JSON.stringify(r)) return false;
+  g.runs[`s${slot}`] = next;
+  return true;
+}
+/**
+ * The race's standings: every seat whose run began, best first (the lowest score; a run still going
+ * after one that's done). [{ slot, score, done, found, rank }].
+ */
+export function standingsOf(g) {
+  const rows = Object.entries(g.runs || {}).filter(([, r]) => r?.begun).map(([k, r]) => ({ slot: Number(k.slice(1)), score: r.done ? r.score : null, done: !!r.done, found: r.found || 0, ms: r.ms ?? null, gave: !!r.gave }));
+  rows.sort((x, y) => (x.done === y.done ? (x.done ? x.score - y.score : y.found - x.found) : x.done ? -1 : 1));
+  rows.forEach(r => { r.rank = r.done ? 1 + rows.filter(o => o.done && o.score < r.score).length : null; });
+  return rows;
+}
+/** Whether the race is over: every run that began is done, and everyone here has begun. */
+export function raceOver(g, present) {
+  const runs = Object.entries(g.runs || {}).filter(([, r]) => r?.begun);
+  return runs.length > 0 && runs.every(([, r]) => r.done) && !present.some(s => !runOf(g, s)?.begun);
+}
+
+// ---------- a new board for the table ----------
+/** Deals the next board (the dealer's), in a mode, unless one was dealt since board n. */
+export function newGameAt(g, { n, board, mode, now }) {
+  if (g.n !== n) return false;
+  g.n = n + 1;
+  g.board = board;
+  g.mode = MODES[mode] ? mode : g.mode;
+  g.start = now + COUNTDOWN;
+  g.team = newRun();
+  g.by = {};
+  g.runs = {};
+  delete g.bot;
+  return true;
+}
+
+/** A finished board as the pair's record keeps it, as this player saw it, else null. Team: the table's score (won:
+ *  every word found without giving up). Race: this player's score, won when first alone. */
+export function resultOf(g, slot, present) {
+  const match = `${g.created}-${g.n}`;
+  if (g.mode === "team") return g.team.done ? { match, score: scoreOf(g.team), won: !g.team.gaveUp, coop: true, lower: true } : null;
+  const mine = runOf(g, slot);
+  if (!mine?.done || !raceOver(g, present)) return null;
+  const rows = standingsOf(g), me = rows.find(r => r.slot === slot);
+  return { match, score: mine.score, won: me?.rank === 1 && rows.filter(r => r.rank === 1).length === 1, lower: true };
+}

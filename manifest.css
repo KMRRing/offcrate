@@ -1,0 +1,244 @@
+/* Manifest: the tally, the stack of packages on the quay of a Hanseatic harbour, then the questions where it stood.
+   Teal is the house colour: the harbour's water. Everything the setting is made of (timber, water, the town) is mixed
+   from the page's own tokens, so it follows each theme and each day and night without a rule of its own. */
+:root {
+  --mf-in: #1F6E66; --mf-in-soft: color-mix(in srgb, var(--mf-in) 15%, var(--sheet)); --mf-good: #2F7D5B; --mf-bad: #A8382B; --mf-edge: var(--tile-edge);
+  /* the quay: oak planks, a timber facing darker on the side away from the light, piles, the outline of a package */
+  --mf-timber: #B49866; --mf-line: rgba(0, 0, 0, .34); --mf-pile: rgba(24, 14, 4, .5); --mf-seam: rgba(40, 24, 6, .26);
+  --mf-floor: color-mix(in srgb, var(--mf-timber) 72%, var(--yard));
+  --mf-quay-l: color-mix(in srgb, var(--mf-floor) 50%, #000); --mf-quay-r: color-mix(in srgb, var(--mf-floor) 64%, #000);
+  /* the harbour: sky, the haze on the water's far edge, the sea, the town on the far shore */
+  --mf-sky: var(--sheet); --mf-haze: color-mix(in srgb, var(--mf-in) 9%, var(--sheet));
+  --mf-sea: color-mix(in srgb, var(--mf-in) 26%, var(--sheet)); --mf-deep: color-mix(in srgb, var(--mf-in) 42%, var(--sheet));
+  --mf-wave: color-mix(in srgb, var(--mf-in) 70%, var(--sheet));
+  --mf-town: color-mix(in srgb, var(--brass) 36%, var(--sheet));
+  /* the far shore, a clean silhouette of gabled roofs, a church spire and masts, one tile that repeats (a mask: its colour is
+     --mf-town's); no steps drawn pixel by pixel (Korbi, 3 November 2026: "I don't like the pixelart in the back") */
+  --mf-roofs: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 100'%3E%3Cpath d='M0 100V62L17 40L34 62V100ZM34 100V60H42V52H50V44H58V52H66V60H72V100ZM72 100V56L92 36L112 56V100ZM112 100V64H150V100ZM124 64V30L131 8L138 30V64ZM150 100V58L168 38L186 58V100ZM186 100V62H194V54H202V46H210V54H218V62H226V100ZM226 100V56L244 36L262 56V100ZM262 100V66L281 50L300 66V100Z'/%3E%3Cpath d='M60 100V18H62V100ZM52 30H70V32H52ZM214 100V12H216V100ZM206 26H224V28H206Z'/%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --mf-in: #6CC0B5; --mf-good: #7FC2A8; --mf-bad: #E8806F; --mf-timber: #7E6B47; --mf-line: rgba(0, 0, 0, .5); --mf-pile: rgba(0, 0, 0, .55); --mf-seam: rgba(0, 0, 0, .3);
+    --mf-sea: color-mix(in srgb, var(--mf-in) 17%, var(--sheet)); --mf-deep: color-mix(in srgb, var(--mf-in) 28%, var(--sheet)); --mf-town: color-mix(in srgb, var(--brass) 30%, var(--sheet)); }
+}
+/* night, set in Settings */
+html[data-mode="night"] { --mf-in: #6CC0B5; --mf-good: #7FC2A8; --mf-bad: #E8806F; --mf-timber: #7E6B47; --mf-line: rgba(0, 0, 0, .5); --mf-pile: rgba(0, 0, 0, .55); --mf-seam: rgba(0, 0, 0, .3);
+  --mf-sea: color-mix(in srgb, var(--mf-in) 17%, var(--sheet)); --mf-deep: color-mix(in srgb, var(--mf-in) 28%, var(--sheet)); --mf-town: color-mix(in srgb, var(--brass) 30%, var(--sheet)); }
+.mf-mark { display: inline-block; }
+.mf-mark svg { width: 100%; height: 100%; display: block; }
+.mf-hud { display: flex; justify-content: space-between; align-items: center; margin: .5rem 0; min-height: 2rem; }
+.mf-round { font-size: .95rem; font-weight: 750; color: var(--ink-soft); min-width: 0; }
+/* at a table, under the round: who else is there, and how each stands (✓ done or ready, … answering, away) */
+.mf-at { display: block; max-width: 46vw; font-size: .78rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mf-at[hidden] { display: none; }
+.mf-at b { font-weight: 800; color: var(--ink); }
+.mf-at .away b { color: var(--ink-soft); font-weight: 650; }
+.mf-score b { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+/* a life is a coin of the League's: a teal disc with its milled rim; one lost is the rim alone */
+.mf-lives { display: flex; gap: .3rem; }
+.mf-life { width: .875rem; height: .875rem; border-radius: 50%; background: var(--mf-in); box-shadow: inset 0 0 0 .1875rem var(--mf-in), inset 0 0 0 .25rem color-mix(in srgb, #fff 55%, var(--mf-in)); }
+.mf-life.gone { background: none; box-shadow: inset 0 0 0 2px var(--mf-edge); }
+
+/* the stage fits the screen: the stack takes the room the questions leave (and steps aside when a question
+   doesn't need it), and the questions scroll inside themselves if they must */
+.mf-stage { padding: .8rem; border-radius: 8px; background: var(--sheet); border: 1px solid var(--tile-edge); box-shadow: inset 0 0 0 4px var(--sheet), inset 0 0 0 5px var(--rule); gap: .5rem; }
+.mf-stage.no-view .mf-view { display: none; }
+.mf-asks { flex: 0 1 auto; max-height: 55%; min-height: 0; }
+.mf-stage.no-view .mf-asks { flex: 1 1 auto; max-height: none; }
+.mf-title { margin: 0; font-size: 1.1rem; font-weight: 800; }
+
+/* the tally: a ledger's page before the stack comes in (an entry to a line, the clerk's notches in its margin, its price
+   in the column ruled off at the right), a strip of chips while the stack is on the quay */
+.mf-book { display: grid; gap: 0; }
+.mf-book:empty { display: none; }
+.mf-book .intro { margin: 0 0 .5rem; font-size: .86rem; color: var(--ink-soft); line-height: 1.35; }
+.mf-order { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: .55rem; padding: .45rem .7rem .45rem .55rem; background: var(--yard); border: 1px solid var(--tile-edge); border-top: 0; }
+.mf-book .intro + .mf-order { border-top: 1px solid var(--tile-edge); border-radius: 4px 4px 0 0; }
+.mf-order:last-child { border-radius: 0 0 4px 4px; }
+.mf-order b { display: block; font-size: .75rem; text-transform: var(--caps); letter-spacing: calc(.06em * var(--track)); color: var(--mf-in); }
+.mf-order span { font-weight: 700; line-height: 1.3; }
+/* n notches, as a clerk cuts a tally stick: |, ||, ||| */
+.mf-notch { display: block; width: calc(var(--n, 1) * .3rem); height: 1.1rem; background: repeating-linear-gradient(90deg, var(--ink-soft) 0 2px, transparent 2px .3rem); opacity: .75; }
+.mf-order .mf-price { padding-left: .6rem; border-left: 3px double var(--brass); align-self: stretch; display: flex; align-items: center; }
+.mf-price { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 1.05rem; white-space: nowrap; }
+.mf-price small { font-size: .75rem; color: var(--ink-soft); margin-left: .15rem; }
+.mf-book.strip { display: flex; flex-wrap: wrap; gap: .3rem; }
+.mf-book.strip .mf-chiplet { padding: .2rem .55rem; border-radius: 3px; background: var(--yard); font-size: .82rem; font-weight: 700; }
+.mf-book.strip .mf-chiplet b { color: var(--mf-in); margin-left: .3rem; }
+
+.mf-timer { height: .375rem; border-radius: 3px; background: var(--yard); overflow: hidden; }
+.mf-timer i { display: block; height: 100%; width: 100%; background: var(--mf-in); transform-origin: left; }
+.mf-timer.run i { animation: drain var(--mf-ms, 5s) linear forwards; }
+.mf-timer.held i { animation-play-state: paused; }
+@keyframes drain { to { transform: scaleX(0); } }
+.mf-timer[hidden] { display: none; }
+
+/* the harbour: the stack stands on its quay in front of the town and the water, a picture in a frame. Sky and sea are a
+   wash behind it, the far shore (--mf-roofs) a silhouette at the horizon; the stack and
+   its quay are drawn over them. The horizon is where the quay's side corners meet it. */
+.mf-view { min-height: 0; position: relative; isolation: isolate; overflow: hidden; border: 1px solid var(--rule); border-radius: 4px; --mf-horizon: 54%; }
+.mf-view::before { content: ""; position: absolute; inset: 0; z-index: -2; background: linear-gradient(to bottom, var(--mf-sky) 0, var(--mf-haze) var(--mf-horizon), var(--mf-sea) var(--mf-horizon), var(--mf-deep) 100%); }
+.mf-view::after { content: ""; position: absolute; left: 0; right: 0; height: 34%; bottom: calc(100% - var(--mf-horizon)); z-index: -1; background: linear-gradient(to top, var(--mf-town), color-mix(in srgb, var(--mf-town) 55%, transparent));
+  -webkit-mask: var(--mf-roofs) repeat-x 50% 100% / auto 100%; mask: var(--mf-roofs) repeat-x 50% 100% / auto 100%; }
+/* the stack as big as the room allows, keeping its shape (--aspect: the drawing's width over its height) */
+.mf-view :is(svg, canvas) { width: min(100cqw, calc(100cqh * var(--aspect, 1.3)), 26rem); height: auto; display: block; overflow: visible; margin: 0 auto; }
+/* the harbour fills the picture: its sides melt into the page's own sky and sea where the picture is narrower than the box */
+.mf-view canvas.scene { --fade: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent), linear-gradient(to bottom, transparent, #000 5%, #000 95%, transparent);
+  -webkit-mask-image: var(--fade); mask-image: var(--fade); -webkit-mask-composite: source-in; mask-composite: intersect; }
+.mf-panel { width: 100%; }
+.mf-panel.away svg { animation: away .38s ease-in forwards; }
+@keyframes away { to { transform: translateY(-40%) scale(.8); opacity: 0; } }
+/* a change round: the stack fades out, the quay stays empty, and it comes back all at once */
+.mf-panel.fade svg { animation: fadeout .5s ease-in forwards; }
+@keyframes fadeout { to { opacity: 0; } }
+.mf-panel.appear svg { animation: appear .35s ease-out both; }
+@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+/* a package drops from above and lands with a bounce; delays stagger them by the round's order */
+.cube.drop { animation: land .5s cubic-bezier(.3, 1.4, .5, 1) both; }
+@keyframes land { from { transform: translateY(-4.375rem); opacity: 0; } 60% { opacity: 1; } to { transform: translateY(0); opacity: 1; } }
+.mf-view .tap :is(.mf-cell), .mf-view canvas.tap { cursor: pointer; }
+.mf-note { margin: 0; font-weight: 750; color: var(--ink-soft); }
+.mf-note[hidden] { display: none; }
+
+/* what the stack stands on (manifest-art.js): oak planks laid along the packages, the quay's timber facing with its piles
+   and waling, water lapping at its foot; a package's faces take their colours from its ware and are outlined */
+.mf-floor { fill: var(--mf-floor); stroke: var(--sheet); stroke-width: 1; }
+.mf-floor.marked { fill: var(--mf-in); opacity: .9; }
+.mf-plank { fill: none; stroke: var(--mf-seam); stroke-width: 1; }
+.mf-quay { stroke: none; }
+.mf-quay.l { fill: var(--mf-quay-l); }
+.mf-quay.r { fill: var(--mf-quay-r); }
+.mf-pile { fill: none; stroke: var(--mf-pile); stroke-width: 1.6; }
+.mf-wave { fill: none; stroke: var(--mf-wave); stroke-width: 1.5; stroke-linecap: round; }
+.mf-cell { stroke: var(--mf-line); stroke-width: 1; stroke-linejoin: round; }
+
+/* the questions, once open: answer any, pass any */
+.mf-asks { display: grid; gap: .45rem; align-content: start; }   /* cards keep their height; the list scrolls if they must */
+.mf-asks:empty { display: none; }
+.mf-row { border-radius: 6px; background: var(--yard); border: 2px solid transparent; }
+.mf-row.active { border-color: var(--mf-in); }
+.mf-row.right { border-color: var(--mf-good); }
+.mf-row.wrong { border-color: var(--mf-bad); }
+.mf-row-head { width: 100%; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .6rem; padding: .45rem .7rem; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; }
+button.mf-row-head { cursor: pointer; }   /* the review's questions light what they asked about */
+.mf-row-head span { font-weight: 750; line-height: 1.25; font-size: .95rem; }
+.mf-row-head em { font-style: normal; font-size: .85rem; font-weight: 800; white-space: nowrap; }
+.mf-row.right em { color: var(--mf-good); }
+.mf-row.wrong em { color: var(--mf-bad); }
+.mf-row-body { padding: 0 .7rem .6rem; display: grid; gap: .45rem; }
+/* a question with a picture: the picture beside its answers */
+.mf-row-body.with-pic { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); align-items: center; gap: .5rem; }
+.mf-pic :is(svg, canvas) { width: 100%; height: auto; max-height: 7.5rem; display: block; overflow: visible; object-fit: contain; }
+.mf-answers { display: grid; grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr)); gap: .4rem; }   /* every answer in one row */
+.with-pic .mf-answers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* the turned question: its picture above the answers, as big as the card allows (3 November 2026: the marked piece must be found) */
+.mf-row-body.with-pic.big { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+.with-pic.big .mf-pic :is(svg, canvas) { max-height: 11.5rem; margin: 0 auto; }
+.with-pic.big .mf-answers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* a ware answers by its name and its packing, drawn small: never by colour alone; beside a picture it's one line (the
+   package, then the name), so the answers are no taller than the picture */
+.with-pic .mf-chip.ware { grid-auto-flow: column; justify-content: start; gap: .35rem; min-height: 2.375rem; padding: .3rem .45rem; }
+.with-pic .mf-chip .mf-icon { width: 1.4rem; height: 1.4rem; }
+.mf-chip { min-height: 2.625rem; border-radius: 5px; border: 2px solid var(--mf-edge); background: var(--sheet); color: var(--ink); font: inherit; font-size: 1.2rem; font-weight: 800; cursor: pointer; display: grid; place-items: center; gap: .15rem; }
+.mf-chip.ware { font-size: .78rem; font-weight: 750; padding: .3rem .15rem; }
+.mf-chip .mf-icon { width: 1.75rem; height: 1.75rem; display: block; }
+.mf-chip.good { border-color: var(--mf-good); background: var(--mf-good); color: #fff; }
+.mf-chip.bad { border-color: var(--mf-bad); background: var(--mf-bad); color: #fff; }
+.mf-chip:disabled { cursor: default; }
+.mf-mini { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.mf-mini button { padding: .25rem; border-radius: 5px; border: 2px solid var(--mf-edge); background: var(--sheet); cursor: pointer; }
+.mf-mini button.good { border-color: var(--mf-good); box-shadow: inset 0 0 0 2px var(--mf-good); }
+.mf-mini button.bad { border-color: var(--mf-bad); box-shadow: inset 0 0 0 2px var(--mf-bad); }
+.mf-mini :is(svg, canvas) { width: 100%; height: auto; max-height: 4.6rem; display: block; object-fit: contain; }
+
+.mf-buttons { display: grid; grid-template-columns: 1fr; gap: .4rem; }
+/* the stage's two halves, what you're shown and what you answer (.fit-half: on a phone not boxes at all, their parts
+   lying in the stage's column as they always have); held sideways (#app.wide) they stand side by side, the picture
+   large on the left and the questions and buttons on the right, the buttons at the bottom */
+@media (orientation: landscape) and (min-width: 700px) {
+  .mf-stage { display: grid; grid-template-columns: minmax(0, 1fr) 22rem; grid-template-rows: minmax(0, 1fr); column-gap: 1.6rem; padding: 1rem; }
+  .mf-look, .mf-answer { display: flex; flex-direction: column; gap: .5rem; min-height: 0; }
+  .mf-answer .mf-asks { flex: 1 1 auto; max-height: none; }
+  .mf-answer .mf-buttons { margin-top: auto; }
+  .mf-view :is(svg, canvas) { width: min(100cqw, calc(100cqh * var(--aspect, 1.3))); }
+}
+.mf-go { min-height: 3rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); font: inherit; font-size: .86rem; font-weight: 800; font-stretch: 106%; letter-spacing: calc(.07em * var(--track)); text-transform: var(--caps); outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; cursor: pointer; }
+.mf-go.quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); outline: 0; }
+.mf-go[hidden] { display: none; }
+.mf-big { font-size: 3rem; font-weight: 800; color: var(--mf-in); text-align: center; margin: .2rem 0; }
+.mf-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin: .6rem 0; }
+.mf-stats div { padding: .5rem .2rem; border-radius: 5px; background: var(--yard); text-align: center; }
+.mf-stats b { display: block; font-size: 1.25rem; font-weight: 800; }
+.mf-stats span { font-size: .75rem; color: var(--ink-soft); }
+
+.mf-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 20;
+  max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.mf-toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .mf-timer.run i { animation-duration: 0.01s; } .cube.drop { animation-duration: 0.01s; } .mf-panel.away svg, .mf-panel.fade svg, .mf-panel.appear svg { animation-duration: 0.01s; } }
+
+/* questions come one at a time: those behind are answered or passed, those ahead show only their kind and price */
+.mf-row.done { opacity: .7; }
+.mf-row.later { opacity: .45; }
+.mf-pass { display: block; margin: .45rem 0 0 auto; border: 1px solid var(--tile-edge); border-radius: 4px; background: none; color: var(--ink-soft); font: inherit; font-size: .8rem; padding: .25rem .8rem; cursor: pointer; }
+
+/* at a table: the plate stands as a line of who the table waits for; a team's reply on its way takes no second tap;
+   the lobby's seats and the standings (duel.css, standings.js) in Manifest's teal */
+.manifest { --duel-in: var(--mf-in); }
+.mf-go:disabled { cursor: default; opacity: .6; }
+.mf-asks.sending { pointer-events: none; opacity: .6; }
+.mf-asks .duel-seats, .mf-asks .duel-rank { margin: 0; }
+.mf-asks .duel-rank li { padding: .4rem .7rem; }          /* six of them leave the questions some room on a small phone */
+.mf-seats li.me { box-shadow: inset 0 0 0 1.5px var(--mf-in); }
+/* under a question at the results: who answered it, or what everyone gave (right in verdigris, wrong in oxblood) */
+.mf-who { margin: 0; padding: 0 .7rem .5rem; display: flex; flex-wrap: wrap; gap: .15rem .7rem; font-size: .8rem; font-weight: 650; color: var(--ink-soft); }
+.mf-who .ok { color: var(--mf-good); }
+.mf-who .bad { color: var(--mf-bad); }
+
+/* the themes beyond Codex keep their own look (themes.css rounds the tally's entries as chips and squares nothing off):
+   a ledger's ruled page is Codex's, the others' entries stand apart, and a pass is a chip */
+html[data-theme="office"] .mf-book:not(.strip) .mf-order { border: 0; border-radius: 12px; margin-bottom: .35rem; }
+html[data-theme="office"] .mf-order .mf-price { border-left: 1px solid var(--rule); }
+html[data-theme="office"] .mf-pass { border-radius: 999px; }
+html[data-theme="office"] .mf-view { border-radius: 14px; }
+
+/* the ladder in the menu: levels three to a row under their chapter, each its number, the stars won and its name */
+#menuBody .mf-chap { margin: .9rem 0 .15rem; font-size: .66rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.12em * var(--track)); color: var(--brass); }
+#menuBody .mf-chap:first-child { margin-top: .4rem; }
+.mf-chap-about { margin: 0 0 .4rem; font-size: .78rem; line-height: 1.3; color: var(--ink-soft); }
+.mf-lgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
+.mf-lgrid button { display: grid; gap: .2rem; padding: .4rem .5rem .45rem; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.mf-lgrid button.done { background: var(--mf-in-soft); }
+.mf-lgrid button[aria-current] { border-color: var(--mf-in); box-shadow: inset 0 0 0 1.5px var(--mf-in); }
+.mf-lgrid button:disabled { opacity: .4; cursor: default; }
+.mf-lrow { display: flex; justify-content: space-between; align-items: baseline; gap: .3rem; min-width: 0; }
+.mf-lrow b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.mf-lrow span { color: var(--brass); font-size: .72rem; letter-spacing: .1em; white-space: nowrap; }
+.mf-lname { font-size: .66rem; line-height: 1.2; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); color: var(--ink-soft); overflow: hidden; overflow-wrap: anywhere; }
+.mf-lsize { font-size: .66rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mf-stars { letter-spacing: .15em; color: var(--brass); }
+
+/* the cargo list: each type's picture, what it weighs and is worth, what it carries and stands on */
+.mf-cargo-intro { margin: 0 0 .6rem; font-size: .86rem; line-height: 1.35; color: var(--ink-soft); }
+.mf-cargo { display: grid; gap: .4rem; }
+.mf-cargo-row { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr); gap: .6rem; align-items: center; padding: .4rem .5rem; border-radius: 5px; background: var(--yard); }
+.mf-cargo-icon :is(svg, canvas) { width: 2.75rem; height: 2.75rem; display: block; }
+.mf-cargo-row b { display: block; font-size: .78rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); color: var(--mf-in); }
+.mf-cargo-row span { display: block; font-size: .8rem; line-height: 1.3; }
+
+/* the key on a question about weights, worths or room: each cargo of the round, drawn, with the numbers the answer is made of */
+.mf-key { display: grid; grid-template-columns: repeat(auto-fill, minmax(4rem, 1fr)); gap: .25rem .4rem; padding: 0 .7rem .5rem; }
+.mf-key-cap { grid-column: 1 / -1; margin: 0; font-size: .72rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.07em * var(--track)); color: var(--mf-in); }
+.mf-key-item { display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); align-items: center; gap: .3rem; min-width: 0; }
+.mf-key-item.long { grid-column: span 2; }                                  /* "Long oak": the name wants the room of two */
+.mf-key-icon :is(svg, canvas) { width: 1.6rem; height: 1.6rem; display: block; }
+.mf-key-text { display: grid; line-height: 1.1; min-width: 0; }
+.mf-key-text small { font-size: .6rem; font-weight: 700; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-key-text b { font-size: .95rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mf-key-text b i { font-style: normal; font-size: .62rem; font-weight: 700; color: var(--ink-soft); margin-left: .25rem; }
+
+/* the 3D harbour covers the whole inside of its box (Korbi, 8 November 2026): the picture is framed to the box's own shape, no flat sky, sea
+   or skyline behind it, no cap on its size and no melting edges */
+.mf-view:has(canvas.scene) { --mf-horizon: 100%; background: var(--mf-sea); }
+.mf-view:has(canvas.scene)::before, .mf-view:has(canvas.scene)::after { display: none; }
+.mf-view canvas.scene { width: min(100cqw, calc(100cqh * var(--aspect, 1.3))); -webkit-mask-image: none; mask-image: none; }
+@media (orientation: landscape) and (min-width: 700px) { .mf-view canvas.scene { width: min(100cqw, calc(100cqh * var(--aspect, 1.3))); } }

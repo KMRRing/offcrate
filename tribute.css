@@ -1,0 +1,311 @@
+/* Guandan on a cobalt-washed table under brass, the cards ivory with red and black, the jokers lettered
+   down their side, the two wild cards starred, the level cards underlined in brass. Your cards stand in columns by
+   rank, the strongest on the left (tribute.js places them to fit the row). */
+:root {
+  --tb-in: #2F5D8C;                                             /* cobalt: the game's accent */
+  --tb-in-soft: color-mix(in srgb, var(--tb-in) 15%, var(--sheet));
+  --tb-felt: color-mix(in srgb, var(--tb-in) 7%, var(--sheet));
+  --tb-face: #FCF9F1; --tb-edge: #C9B78E; --tb-red: #B3302A; --tb-black: #1E2730; --tb-star: #C8923A;
+  --tb-go: #2F7D5B;                                             /* verdigris: your go */
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --tb-in: #86AEDC; --tb-felt: color-mix(in srgb, #2F5D8C 20%, var(--sheet)); --tb-face: #ECE6D6; --tb-edge: #7E6C4B; --tb-go: #7FC2A8; }
+}
+/* night, set in Settings */
+html[data-mode="night"] { --tb-in: #86AEDC; --tb-felt: color-mix(in srgb, #2F5D8C 20%, var(--sheet)); --tb-face: #ECE6D6; --tb-edge: #7E6C4B; --tb-go: #7FC2A8; }
+
+.tb-mark { display: inline-block; }
+.tb-mark svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- the levels ---------- */
+.tb-strip { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .2rem .7rem; margin: .55rem 0 .4rem; font-size: .84rem; color: var(--ink-soft); }
+.tb-strip b { color: var(--ink); font-weight: 800; }
+.tb-wild { color: var(--tb-red); font-weight: 800; }
+.tb-score { font-variant-numeric: tabular-nums; }
+/* the puzzle rush: where you are in the run, and the verdict */
+.tb-rush { font-variant-numeric: tabular-nums; }
+.tb-rush b { color: var(--tb-in); }
+.tb-strikes { letter-spacing: .08em; color: #A8382B; }
+.tb-hit { color: #2F7D5B !important; }
+.tb-miss { color: #A8382B !important; }
+.tb-yours { padding: 0 .3rem; border: 1px solid var(--rule); border-radius: 3px; font-size: .7rem; font-weight: 700; color: var(--ink-soft); text-transform: var(--caps); letter-spacing: calc(.06em * var(--track)); }
+.tb-opt.missed { border-color: #A8382B; }
+.tb-rush-score { margin: .2rem 0; font-size: 1rem; }
+.tb-rush-score b { font-size: 2.2rem; font-weight: 800; color: var(--tb-in); margin-right: .3rem; }
+.tb-rush-sub { margin: .2rem 0 .4rem; font-size: .9rem; color: var(--ink-soft); }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) .tb-strikes, html:not([data-mode="day"]) .tb-miss { color: #E8806F !important; } html:not([data-mode="day"]) .tb-hit { color: #7FC2A8 !important; } html:not([data-mode="day"]) .tb-opt.missed { border-color: #E8806F; } }
+html[data-mode="night"] .tb-strikes, html[data-mode="night"] .tb-miss { color: #E8806F !important; }
+html[data-mode="night"] .tb-hit { color: #7FC2A8 !important; }
+html[data-mode="night"] .tb-opt.missed { border-color: #E8806F; }
+
+/* ---------- the table: your partner across, the others either side, you at the foot ---------- */
+/* Three rows: your partner's play, the two others' side by side (each up to half the width, at its own edge), yours;
+   each name at its player's edge of the table. tribute.js sizes the plays' cards to the room (--tb-pf). */
+.tb-table { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "mid" "me"; gap: .35rem; padding: .5rem; border-radius: 6px; background: var(--tb-felt);
+  border: 1px solid var(--tile-edge); box-shadow: inset 0 0 0 4px var(--tb-felt), inset 0 0 0 5px var(--rule); min-height: 0; overflow: hidden; }
+/* your go: the table flashes verdigris as a decision comes to you (tribute.js), and fades */
+.tb-table.go { animation: tb-go 1.6s ease-out; }
+@keyframes tb-go {
+  0%, 10% { border-color: var(--tb-go); background-color: color-mix(in srgb, var(--tb-go) 16%, var(--tb-felt));
+    box-shadow: inset 0 0 0 4px var(--tb-felt), inset 0 0 0 5px var(--tb-go), inset 0 0 1.6rem .25rem color-mix(in srgb, var(--tb-go) 55%, transparent); }
+  100% { border-color: var(--tile-edge); background-color: var(--tb-felt);
+    box-shadow: inset 0 0 0 4px var(--tb-felt), inset 0 0 0 5px var(--rule), inset 0 0 0 0 transparent; }
+}
+.tb-seat { position: relative; display: grid; justify-items: center; gap: .25rem; min-width: 0; }
+.tb-top { grid-area: top; }
+.tb-left { grid-area: mid; justify-self: start; align-self: center; justify-items: start; max-width: calc(50% - .2rem); }
+.tb-right { grid-area: mid; justify-self: end; align-self: center; justify-items: end; max-width: calc(50% - .2rem); }
+.tb-me { grid-area: me; }
+.tb-me .tb-who { order: 1; }                                   /* your name at your edge, under your play */
+/* a short table (tribute.js: flat): your partner's name and yours at the left edge, beside the plays, not over and under */
+.tb-table.flat .tb-top .tb-who, .tb-table.flat .tb-me .tb-who { position: absolute; left: 0; top: 50%; transform: translateY(-50%); max-width: 28%; }
+.tb-who { position: relative; display: flex; align-items: center; gap: .3rem; font-size: .86rem; max-width: 100%; }
+.tb-who b { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-who.mate b { color: var(--tb-in); }
+.tb-who.on b { text-decoration: underline 2px var(--brass); text-underline-offset: .2rem; }
+.tb-n { min-width: 1.5rem; padding: .05rem .3rem; border-radius: 4px; background: var(--sheet); border: 1px solid var(--rule); font-size: .8rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.tb-place { padding: .05rem .35rem; border-radius: 4px; background: var(--tb-in); color: var(--sheet); font-size: .72rem; font-weight: 800; text-transform: var(--caps); letter-spacing: calc(.05em * var(--track)); }
+/* a player thinking: beside the name, outside it, so the name doesn't move (inward of the right-hand player's) */
+.tb-dots { position: absolute; left: 100%; margin-left: .3rem; color: var(--tb-in); font-weight: 800; }
+.tb-right .tb-dots { left: auto; right: 100%; margin: 0 .3rem 0 0; }
+.tb-play { min-height: calc(var(--tb-pf, .95rem) * 3.79); display: grid; place-items: center; max-width: 100%; }
+.tb-play.pass { font-size: .78rem; font-weight: 800; color: var(--ink-soft); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); }
+.tb-play.best .tb-cards { filter: drop-shadow(0 0 0 var(--tb-in)) drop-shadow(0 2px 0 var(--tb-in)); }
+/* who led, who paid and gave back: between the two at the sides, before anyone has played (their plays' room) */
+.tb-news { grid-area: mid; justify-self: center; align-self: center; max-width: 54%; display: grid; gap: .15rem; text-align: center; font-size: .8rem; color: var(--ink-soft); }
+.tb-news p { margin: 0; }
+
+/* ---------- cards ---------- */
+.tb-card { box-sizing: border-box; width: 2.6rem; height: 3.6rem; padding: .16rem .2rem; border-radius: 5px; background: var(--tb-face); border: 1px solid var(--tb-edge);
+  color: var(--tb-black); display: flex; flex-direction: column; align-items: flex-start; font: 800 .95rem/1 var(--font); text-align: left;
+  box-shadow: 0 1px 2px rgba(28, 42, 52, .18); -webkit-user-select: none; user-select: none; }
+.tb-card .r { letter-spacing: -.03em; }
+.tb-card .s { font-size: .82rem; margin-top: .05rem; }
+.tb-card.red { color: var(--tb-red); }
+.tb-card.joker .r { font-size: .5rem; line-height: .98; letter-spacing: 0; }
+.tb-card.joker.big { color: var(--tb-red); }
+.tb-card.joker.small { color: var(--tb-black); }
+.tb-card .w { position: absolute; right: .18rem; bottom: .12rem; font-size: .78rem; color: var(--tb-star); }
+.tb-card.wild { background: color-mix(in srgb, var(--tb-star) 14%, var(--tb-face)); }
+.tb-card.level { box-shadow: inset 0 -.2rem 0 color-mix(in srgb, var(--brass) 70%, transparent), 0 1px 2px rgba(28, 42, 52, .18); }
+/* your hand: cards placed by tribute.js in columns, the column's cards each showing its corner */
+.tb-hand { position: relative; margin-top: .5rem; flex: none; touch-action: none; -webkit-touch-callout: none; }   /* a drag picks cards */
+.tb-hand .tb-card { position: absolute; width: var(--tb-cw, 2.6rem); height: var(--tb-ch, 3.6rem); cursor: pointer; transition: transform .1s; }
+.tb-hand .tb-card.sel { background: color-mix(in srgb, var(--tb-in) 24%, var(--tb-face)); border-color: var(--tb-in); box-shadow: 0 0 0 1.5px var(--tb-in); transform: translateY(-.3rem); }
+/* the coach's play (Always): its cards ringed in the accent until a Hint picks them */
+.tb-hand .tb-card.advised:not(.sel) { outline: 2px solid var(--tb-in); outline-offset: -3px; }
+.tb-hand .tb-card.dim { opacity: .38; }
+/* a hint's plan (tribute.js's planView): your cards set out as the coach plans them, its play first, then each play
+   it counts on a column (in a row, a group), every other one shaded so what goes with what reads at a glance */
+.tb-hand.plan .tb-card.alt:not(.sel) { background: color-mix(in srgb, var(--tb-in) 11%, var(--tb-face)); border-color: color-mix(in srgb, var(--tb-in) 40%, var(--tb-edge)); }
+/* a deep column (five of a rank or more): its corners smaller, so every card's suit still shows in its step */
+.tb-hand.tight .tb-card { font-size: .82rem; }
+.tb-hand.tight .tb-card .s { font-size: .7rem; margin-top: 0; }
+/* a play on the table: cards as large as your own or larger, all in em of --tb-pf (tribute.js fits it to the table),
+   each one behind the next showing its whole corner, closer (--tb-step) only where a long bomb needs it */
+.tb-cards { display: inline-flex; max-width: 100%; font-size: var(--tb-pf, .95rem); }
+.tb-cards .tb-card { position: relative; flex: none; width: 2.74em; height: 3.79em; padding: .17em .21em; font-size: 1em; }
+.tb-cards .tb-card .s { font-size: .86em; }
+.tb-cards .tb-card + .tb-card { margin-left: calc(var(--tb-step, 1.5em) - 2.74em); }
+.tb-cards .tb-card .w { font-size: .82em; right: .19em; bottom: .13em; }
+.tb-cards .tb-card.joker .r { font-size: .53em; }
+
+/* the card counter: what you haven't seen, by rank */
+.tb-counter { display: flex; gap: .1rem; margin-top: .4rem; font-size: .62rem; font-variant-numeric: tabular-nums; }
+.tb-counter span { flex: 1 1 0; display: inline-grid; justify-items: center; min-width: 0; padding: .05rem 0; border-radius: 3px; background: var(--sheet); border: 1px solid var(--rule); line-height: 1.1; }
+.tb-counter b { font-weight: 800; }
+.tb-counter .gone { opacity: .35; }
+
+/* ---------- your move ---------- */
+.tb-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; padding-top: .45rem; }
+.tb-say { margin: 0; font-size: .84rem; line-height: 1.35; }
+.tb-say b { margin-right: .3rem; color: var(--tb-in); font-size: .72rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.1em * var(--track)); }
+.tb-thinking { color: var(--ink-soft); }
+/* a coach that speaks unasked (Check, Always) keeps its room, so the table holds its size as it speaks and falls quiet:
+   on a phone four lines, three on a short one (a deep column of cards leaves the table little room), a longer reason
+   scrolling in its box */
+.tb-say.kept { min-height: calc(2em * 1.35); }
+@media (max-width: 599px) { .tb-say.kept { height: calc(4em * 1.35); overflow-y: auto; overscroll-behavior: contain; } }
+@media (max-width: 599px) and (max-height: 699px) { .tb-say.kept { height: calc(3em * 1.35); } }
+/* your buttons in one row, so the row, and your cards over it, keep their place as you pick: a play's name that
+   doesn't fit beside the others in two smaller lines (two), and on a phone Clear as × (they used to wrap, and the
+   cards jumped up a row's height as you picked the first one) */
+.tb-actions { display: flex; flex-wrap: nowrap; align-items: center; gap: .45rem; min-height: 2.75rem; }
+.tb-actions > * { flex: none; }
+.tb-actions .tb-wait { flex: 1 1 auto; min-width: 0; }
+.tb-actions .tb-go:last-child { margin-left: auto; flex: 0 1 auto; min-width: 0; max-height: 2.75rem; overflow: hidden; white-space: nowrap; }
+.tb-actions .tb-go.two { white-space: normal; font-size: .7rem; line-height: 1.1; }
+.tb-clear .short { display: none; }
+@media (max-width: 599px) {
+  .tb-go { padding: 0 .65rem; }
+  .tb-clear { min-width: 2.75rem; }
+  .tb-clear .long { display: none; }
+  .tb-clear .short { display: inline; font-size: 1.2rem; line-height: 1; }
+}
+.tb-go { min-height: 2.75rem; padding: 0 1rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); font: inherit; font-size: .84rem; font-weight: 800;
+  font-stretch: 106%; letter-spacing: calc(.06em * var(--track)); text-transform: var(--caps); outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; cursor: pointer; }
+.tb-go.primary { background: var(--tb-in); color: var(--sheet); outline-color: color-mix(in srgb, var(--sheet) 50%, transparent); }
+.tb-go.quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); outline: 0; }
+.tb-go:disabled { opacity: .45; cursor: default; }
+.tb-wait { margin: 0; font-size: .9rem; color: var(--ink-soft); }
+
+/* ---------- the sheets ---------- */
+dialog.tb-sheet { max-height: 88vh; max-height: 88svh; overflow-y: auto; overscroll-behavior: contain; }
+#rulesDlg, #whyDlg { padding-top: 0; }
+#rulesDlg .pick-head, #whyDlg .pick-head { position: -webkit-sticky; position: sticky; top: 0; z-index: 1; background: var(--sheet); padding-top: 1rem; }
+.tb-why-btn { margin-left: .2rem; font-size: inherit; }
+/* the plays weighed: each with its numbers, what speaks for it (+) and against it (−) */
+.tb-why-lead { margin: .2rem 0 .6rem; font-size: .92rem; font-weight: 650; line-height: 1.45; }
+/* the count: what's still out, and whether a bomb could be */
+.tb-why-out { margin: -.2rem 0 .7rem; padding: .4rem .55rem; border-left: 2px solid var(--brass); font-size: .84rem; line-height: 1.4; color: var(--ink); background: color-mix(in srgb, var(--brass) 8%, var(--sheet)); }
+.tb-opts { margin: 0; padding: 0; list-style: none; display: grid; gap: .5rem; }
+.tb-opt { padding: .5rem .6rem; border: 1px solid var(--rule); border-radius: 5px; }
+.tb-opt.best { border-color: var(--tb-in); background: color-mix(in srgb, var(--tb-in) 9%, var(--sheet)); }
+.tb-opt-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .6rem; }
+.tb-opt-head b { font-size: .92rem; }
+.tb-opt-head .link { margin-left: auto; font-size: .8rem; }
+/* the coach's plans in small cards: your hand as it stands, and under each play what the rest of it makes */
+.tb-plan-now, .tb-plan-then { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; font-size: .8rem; color: var(--ink-soft); }
+.tb-plan-now { margin: 0 0 .7rem; }
+.tb-plan-then { margin: .35rem 0 .1rem; }
+.tb-plan-row { display: flex; flex-wrap: wrap; gap: .25rem .45rem; }
+.tb-plan-row .tb-cards { font-size: .5rem; --tb-step: 1.3em; }
+.tb-plan-note { color: var(--ink-soft); }
+.tb-stat { font-size: .76rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.tb-pc { margin: .3rem 0 0; padding: 0; list-style: none; display: grid; gap: .15rem; font-size: .84rem; line-height: 1.38; }
+.tb-pc li { position: relative; padding-left: 1rem; }
+.tb-pc li::before { position: absolute; left: 0; top: 0; font-weight: 800; }
+.tb-pc .pro::before { content: "+"; color: #2F7D5B; }
+.tb-pc .con::before { content: "−"; color: #A8382B; }
+.tb-why-note { margin: .8rem 0 0; font-size: .78rem; line-height: 1.4; color: var(--ink-soft); }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) .tb-pc .pro::before { color: #7FC2A8; } html:not([data-mode="day"]) .tb-pc .con::before { color: #E8806F; } }
+html[data-mode="night"] .tb-pc .pro::before { color: #7FC2A8; }
+html[data-mode="night"] .tb-pc .con::before { color: #E8806F; }
+.tb-rules p { margin: .5rem 0; font-size: .92rem; line-height: 1.45; }
+.tb-result-head { margin: 0 0 .5rem; font-size: 1.1rem; }
+.tb-order { margin: .3rem 0; padding: 0; list-style: none; display: grid; gap: .2rem; }
+.tb-order li { display: flex; gap: .5rem; font-size: .95rem; }
+.tb-order li span { min-width: 2.2rem; color: var(--ink-soft); font-weight: 700; }
+.tb-order li.us { font-weight: 800; color: var(--tb-in); }
+.tb-gain, .tb-levels, .tb-next, .tb-final { margin: .4rem 0; font-size: .95rem; }
+.tb-final { font-weight: 800; }
+/* the coach's review of the hand (Check, Always) */
+.tb-sub { margin: .9rem 0 .2rem; font-size: .72rem; font-weight: 800; font-stretch: var(--wide); letter-spacing: calc(.12em * var(--track)); text-transform: var(--caps); color: var(--tb-in); }
+.tb-review-lead { margin: .35rem 0; font-size: .92rem; }
+.tb-review { margin: .3rem 0; padding-left: 1.1rem; font-size: .88rem; line-height: 1.4; }
+.tb-review li { margin: .3rem 0; }
+.tb-result-go { display: flex; gap: .5rem; margin-top: .8rem; }
+.tb-result-go .tb-go { flex: 1 1 0; margin: 0; }
+
+/* Copy turn and Copy game, where the browser wouldn't copy: the words to select by hand */
+.tb-copy { display: block; width: 100%; height: 55vh; box-sizing: border-box; padding: .5rem; border: 1px solid var(--rule); border-radius: 4px; resize: none;
+  background: var(--tile); color: var(--ink); font: .76rem/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.tb-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 40;
+  max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.tb-toast.show { opacity: 1; }
+
+/* the coach's four ways side by side in the menu, off to always, as a scale */
+#menuBody .menu-grid[aria-label="Coach"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Full screen (Menu; tribute.js's placeFull puts the header, and but on a phone held sideways the levels, inside the
+   table): the header's buttons at the cloth's top right and the levels at its top left, in a band along its top, so
+   the header's row and the levels' row go to the table */
+#app.tribute.ontable .tb-table { position: relative; padding-top: 2.95rem; }
+#app .tb-table > .top { position: absolute; top: .4rem; right: .45rem; z-index: 2; padding: 0; background: none; border: 0; gap: .3rem; }   /* over every theme's rule under a header */
+.tb-table > .top .mark-btn { font-size: 0; gap: 0; }
+.tb-table > .top .partner-pill { display: none; }
+.tb-table > .top .mark-icon { width: 2.1rem; height: 2.1rem; }
+.tb-table > .top .top-right { gap: .3rem; }
+.tb-table > .top .pick { min-height: 2.1rem; padding: .2rem .5rem; font-size: .72rem; }
+.tb-table > .top .cx-btn { width: 2.25rem; height: 2.25rem; }
+.tb-table > .top .cx-btn .cx { width: 2.1rem; height: 2.1rem; }
+#app.tribute .tb-table > .tb-strip { position: absolute; grid-area: auto; top: .5rem; left: .65rem; z-index: 2; margin: 0; flex-direction: column; flex-wrap: nowrap; gap: 0; font-size: .74rem; line-height: 1.3; }
+
+/* held sideways: the table on the left with your cards under it, the levels and your move beside it */
+
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.tribute { --beside: 18rem; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  #app.tribute .tb-table { grid-column: 1; grid-row: 2 / span 2; margin-top: .6rem; }
+  #app.tribute .tb-hand { grid-column: 1; grid-row: 4; }
+  #app.tribute .tb-strip { grid-column: 2; grid-row: 2; flex-direction: column; margin-top: .8rem; }
+  #app.tribute .tb-counter { grid-column: 2; grid-row: 3; align-self: start; flex-wrap: wrap; }
+  #app.tribute .tb-counter span { flex: 0 0 auto; min-width: 1.8rem; }
+  #app.tribute .tb-actions { flex-wrap: wrap; }                    /* beside the table: room to grow upward */
+  #app.tribute .tb-bar { grid-column: 2; grid-row: 3 / span 2; align-content: end; }
+}
+
+/* A phone on its side is a card table: the cloth takes the whole height on the left, the partner across at its far
+   edge, the others either side, and your cards fanned along its near edge as if you sat at it (tribute.js lays them
+   in one row here). Beside it a console: the header at the top (the logo stands for the name), the levels and the
+   counter, then your move, its buttons lowest, under the thumb. Everything fits; nothing scrolls. */
+@media (orientation: landscape) and (min-width: 700px) and (max-height: 500px) {
+  html #app.tribute { --beside-cols: minmax(0, 1fr) 10.75rem; --beside-gap: .7rem; grid-template-rows: auto auto auto minmax(0, 1fr); overflow: hidden;
+    padding: max(.45rem, env(safe-area-inset-top, 0px)) max(.6rem, env(safe-area-inset-right, 0px)) max(.45rem, env(safe-area-inset-bottom, 0px)) max(.6rem, env(safe-area-inset-left, 0px)); }
+  html #app.tribute.beside > .top { grid-column: 2; grid-row: 1; padding-bottom: .45rem; }
+  #app.tribute .top .mark-btn { font-size: 0; gap: 0; }
+  #app.tribute .top .partner-pill { display: none; }     /* no room to say it here: at the table your partner sits across */
+  #app.tribute .top .mark-icon { width: 2.1rem; height: 2.1rem; }
+  #app.tribute .top .top-right { gap: .35rem; }
+  #app.tribute .top .pick { min-height: 2rem; padding: .2rem .5rem; font-size: .72rem; }
+  #app.tribute .top .cx-btn { width: 2.25rem; height: 2.25rem; }
+  #app.tribute .top .cx-btn .cx { width: 2.1rem; height: 2.1rem; }
+
+  /* the cloth, all the height, room left at its foot for your cards */
+  #app.tribute { --tb-felt: color-mix(in srgb, #2F5D8C 21%, var(--sheet)); }               /* a deeper cloth for the whole screen */
+  @media (prefers-color-scheme: dark) { html:not([data-mode="day"]) #app.tribute { --tb-felt: color-mix(in srgb, #2F5D8C 20%, var(--sheet)); } }
+  html[data-mode="night"] #app.tribute { --tb-felt: color-mix(in srgb, #2F5D8C 20%, var(--sheet)); }
+  #app.tribute .tb-table { grid-column: 1; grid-row: 1 / -1; margin: 0; gap: .2rem .4rem; padding: .4rem .6rem calc(var(--tb-hh, 3.2rem) - max(.45rem, env(safe-area-inset-bottom, 0px)) - 1.2rem);
+    background: radial-gradient(ellipse 70% 65% at 50% 42%, color-mix(in srgb, var(--tb-felt) 55%, var(--sheet)), var(--tb-felt)); }
+  #app.tribute .tb-hand { grid-column: 1; grid-row: 4; align-self: end; z-index: 1; margin: 0 1.1rem calc(-1 * max(.45rem, env(safe-area-inset-bottom, 0px))); }   /* Korbi, 8 Nov 2026: the cards touch the screen's bottom edge */
+  #app.tribute .tb-hand.fan .tb-card { padding: .14rem .16rem; font-size: .9rem; }
+  #app.tribute .tb-hand.fan .tb-card .s { font-size: .76rem; }
+  #app.tribute .tb-hand.fan .tb-card .w { right: auto; left: .2rem; bottom: .16rem; }      /* the star where the fan leaves it showing */
+  #app.tribute .tb-hand.fan .tb-card.sel { transform: translateY(-.45rem); }
+  #app.tribute .tb-news { font-size: .76rem; }
+  /* the others' hands: a card's back beside how many they hold */
+  #app.tribute .tb-n { display: inline-flex; align-items: center; gap: .3rem; }
+  #app.tribute .tb-n::before { content: ""; width: .62rem; height: .86rem; border-radius: 2px; background: var(--tb-in);
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--sheet) 85%, transparent), 1.5px -1.5px 0 0 color-mix(in srgb, var(--tb-in) 55%, var(--sheet)); }
+
+  /* the console */
+  #app.tribute .tb-strip { grid-column: 2; grid-row: 2; flex-direction: column; flex-wrap: nowrap; gap: .1rem; margin: .45rem 0 .35rem; font-size: .78rem; }
+  #app.tribute .tb-counter { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .12rem; margin: 0 0 .3rem; font-size: .6rem; }
+  #app.tribute .tb-counter span { min-width: 0; }
+  #app.tribute .tb-bar { grid-column: 2; grid-row: 4; display: flex; flex-direction: column; justify-content: flex-end; gap: .35rem; min-height: 0; padding: 0; }
+  #app.tribute .tb-say { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; font-size: .76rem; line-height: 1.3; }
+  #app.tribute .tb-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; min-height: 0; flex: none; }
+  #app.tribute .tb-actions .tb-go { min-height: 2.5rem; margin: 0; padding: 0 .35rem; font-size: .76rem; }
+  #app.tribute .tb-actions .tb-go:last-child, #app.tribute .tb-actions .tb-wait { grid-column: 1 / -1; }
+  #app.tribute .tb-wait { font-size: .8rem; }
+  .tb-toast { top: 46%; bottom: auto; left: calc(50% - 5.7rem); max-width: min(56vw, 26rem); }   /* over the cloth's middle, not your cards */
+
+  /* full screen: the cloth the whole screen, the console lying on it at the right with the header's buttons at its top,
+     and your cards under both, the whole width */
+  html #app.tribute.ontable { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  #app.tribute.ontable .tb-table { grid-column: 1 / -1; padding: .4rem calc(10.75rem + 1.3rem) calc(var(--tb-hh, 3.2rem) - max(.45rem, env(safe-area-inset-bottom, 0px)) - 1.2rem) .6rem; }
+  #app.tribute.ontable .tb-table > .top { top: .45rem; right: .6rem; }
+  #app.tribute.ontable .tb-strip { grid-column: 2; grid-row: 1; z-index: 1; margin-top: 3.05rem; padding-right: .6rem; }
+  #app.tribute.ontable .tb-counter { grid-column: 2; grid-row: 2; z-index: 1; margin-right: .6rem; }
+  #app.tribute.ontable .tb-bar { grid-column: 2; grid-row: 3; z-index: 1; padding: 0 .6rem .7rem 0; }
+  #app.tribute.ontable .tb-hand { grid-column: 1 / -1; grid-row: 4; }
+  /* your cards stacked (Menu): in the cloth's column as they are without full screen, the console down to the foot */
+  #app.tribute.ontable:not(.fanned) .tb-hand { grid-column: 1; }
+  #app.tribute.ontable:not(.fanned) .tb-bar { grid-row: 3 / span 2; padding-bottom: .3rem; }
+}
+
+/* Korbi, 7 Nov 2026: the hint (and the coach's words) as a speech bubble over the screen, partly see-through, dismissable with ×;
+   it takes no room, so nothing under it moves whether it speaks or not. It rises from the action row over your cards. */
+.tb-bar { position: relative; }
+#app.tribute .tb-say.bubble { position: absolute; left: 0; right: 0; bottom: calc(100% + .55rem); z-index: 20; margin: 0; min-height: 0; height: auto;
+  padding: .55rem 2rem .6rem .75rem; border: 1px solid var(--brass); border-radius: .5rem; font-size: .82rem; line-height: 1.35; color: var(--ink);
+  background: color-mix(in srgb, var(--sheet) 80%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: 0 .3rem .9rem rgba(0, 0, 0, .3); overscroll-behavior: contain; }
+#app.tribute .tb-say.bubble[hidden] { display: none; }
+.tb-say.bubble::after { content: ""; position: absolute; left: 1.4rem; bottom: -.4rem; width: .7rem; height: .7rem; border: solid var(--brass); border-width: 0 1px 1px 0; transform: rotate(45deg);
+  background: color-mix(in srgb, var(--sheet) 80%, transparent); }
+.tb-say-x { position: absolute; top: .2rem; right: .25rem; width: 1.6rem; height: 1.6rem; padding: 0; border: 0; background: none; color: var(--ink); font-size: 1.2rem; line-height: 1; opacity: .7; cursor: pointer; }
+.tb-say-x:hover { opacity: 1; }
+/* sideways the bar is a column that ends in the buttons: the bubble rises from them, not from the column's top */
+@media (orientation: landscape) and (min-width: 700px) { #app.tribute .tb-say.bubble { bottom: 3.7rem; } }

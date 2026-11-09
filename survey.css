@@ -1,0 +1,113 @@
+/* Survey: a block of rock in three dimensions on a brass plinth (survey-3d.js draws it on a canvas), with the readings of
+   its rows as small plates laid over the canvas where each row comes out of the block. Ochre is the house colour. */
+:root { --sv-in: #A47528; --sv-in-soft: color-mix(in srgb, var(--sv-in) 15%, var(--sheet)); --sv-good: #2F7D5B; --sv-bad: #A8382B; --sv-edge: var(--tile-edge); }
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) { --sv-in: #D9AF62; --sv-good: #7FC2A8; --sv-bad: #E8806F; }
+}
+/* night, set in Settings */
+html[data-mode="night"] { --sv-in: #D9AF62; --sv-good: #7FC2A8; --sv-bad: #E8806F; }
+:root { --sv-silver: #5d6e86; --sv-gold: #9a6a14; }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) { --sv-silver: #c9d4e4; --sv-gold: #e5b95a; } }
+html[data-mode="night"] { --sv-silver: #c9d4e4; --sv-gold: #e5b95a; }
+
+.sv-mark { display: inline-block; }
+.sv-mark svg { width: 100%; height: 100%; display: block; }
+.sv-strip { display: flex; justify-content: space-between; align-items: baseline; margin: .6rem 0 .5rem; font-size: .92rem; color: var(--ink-soft); white-space: nowrap; }
+.sv-strip b { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.sv-score b { font-size: 1.4rem; }
+.sv-score small { margin-left: .4rem; font-size: .78rem; font-weight: 700; color: var(--sv-bad); font-variant-numeric: tabular-nums; }
+/* together, the others' times on a line of their own under yours (duel.js fills it; a tap opens the match) */
+.sv-strip:has(.sv-rival:not([hidden])) { flex-wrap: wrap; row-gap: .1rem; }
+.sv-rival { order: 3; flex: 1 0 100%; min-width: 0; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-rival[hidden] { display: none; }
+.sv-par { color: var(--ink-soft); font-size: .82rem; }
+.sv-par[hidden] { display: none; }
+
+/* the block: as large as its room allows; the canvas draws it, the plates over it say what its rows hold */
+.sv-card { border-radius: 8px; background: var(--sheet); border: 1px solid var(--tile-edge); }
+.sv-sky { position: relative; overflow: hidden; padding: 0; }
+.sv-stage { position: absolute; inset: 0; touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab; }
+.sv-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.sv-labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* the flat view: a plate is as big as the cube it sits by (survey-2d.js measures them at 0.86 of one) */
+.sv-labels.flat .sv-lab { --b: clamp(.7rem, calc(var(--cell, 2rem) * .86), 1.7rem); }
+/* a reading: the ore cubes in a row. A plain plate is one seam (one run of ore), a ring two, a box three or more.
+   --cell (set by the script) is a cube's width on the screen, so the plates grow with the block */
+.sv-lab { --b: clamp(.95rem, calc(var(--cell, 2rem) * .52), 1.5rem); position: absolute; left: 0; top: 0; display: grid; place-items: center; box-sizing: border-box;
+  width: var(--b); height: var(--b); border-radius: 4px; background: color-mix(in srgb, var(--sheet) 90%, transparent); color: var(--ink);
+  font-size: calc(var(--b) * .64); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent); }
+.sv-lab.ring { border-radius: 50%; box-shadow: 0 0 0 2px var(--sv-in); }
+.sv-lab.box { border-radius: 2px; box-shadow: 0 0 0 2px var(--ink); }
+/* runs: the seams' lengths in order ("2 1"), so the plate is as wide as its digits; fog: a row with no reading */
+.sv-lab.runs { width: auto; min-width: var(--b); padding: 0 calc(var(--b) * .16); font-size: calc(var(--b) * .56); letter-spacing: .02em; white-space: nowrap; border-radius: 4px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--sv-in) 55%, transparent); }
+/* two ores, or a fault: several numbers on a plate. Silver then gold, each its own colour and underlined so it does not rest on colour alone; a bar between the sides of a fault */
+.sv-lab.two { display: flex; align-items: center; gap: calc(var(--b) * .2); width: auto; min-width: var(--b); padding: 0 calc(var(--b) * .2); font-size: calc(var(--b) * .6); white-space: nowrap; box-shadow: 0 0 0 1px color-mix(in srgb, var(--brass) 75%, transparent); }
+.sv-lab.two span { display: inline-flex; gap: calc(var(--b) * .16); }
+.sv-lab.two i { font-style: normal; }
+.sv-lab.two i.s { color: var(--sv-silver); box-shadow: inset 0 -2px 0 var(--sv-silver); }
+.sv-lab.two i.g { color: var(--sv-gold); box-shadow: inset 0 -2px 0 var(--sv-gold); }
+.sv-lab.two u { align-self: stretch; width: 2px; margin: calc(var(--b) * .12) 0; background: var(--brass); }
+.sv-lab.fog { color: var(--ink-soft); background: color-mix(in srgb, var(--sheet) 55%, transparent); box-shadow: none; border: 1px dashed color-mix(in srgb, var(--ink) 40%, transparent); }
+.sv-lab.hot { background: var(--plate); color: var(--plate-ink); box-shadow: 0 0 0 2px var(--sv-in), 0 0 0 4px color-mix(in srgb, var(--sv-in) 35%, transparent); z-index: 1; }
+.sv-reset { position: absolute; left: .5rem; bottom: .5rem; z-index: 2; width: 2.5rem; height: 2.5rem; border-radius: 50%; border: 1px solid var(--brass); background: color-mix(in srgb, var(--sheet) 82%, transparent); color: var(--ink); font: inherit; font-size: 1.25rem; line-height: 1; cursor: pointer; touch-action: manipulation; }
+.sv-reset[hidden] { display: none; }
+.sv-nogl { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 1.5rem; text-align: center; color: var(--ink-soft); font-weight: 650; line-height: 1.4; }
+
+/* under the block: a line of what to do or what happened, the tools; at the end, how it went and the way on, in the same room */
+.sv-side { display: grid; align-content: start; margin-top: .6rem; min-height: 7.4rem; }
+.sv-side > * { grid-area: 1 / 1; }
+.sv-controls { display: grid; gap: .5rem; align-content: start; }
+.sv-controls[hidden], .sv-result[hidden] { display: none; }
+.sv-line { margin: 0; min-height: 2.7em; font-size: .88rem; line-height: 1.35; color: var(--ink-soft); }
+.sv-line b { color: var(--ink); font-weight: 800; }
+.sv-line.bad { color: var(--sv-bad); }
+.sv-line.good { color: var(--sv-good); }
+.sv-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; }
+.sv-tool { display: grid; gap: .05rem; align-content: center; min-height: 3.25rem; border-radius: 5px; border: 2px solid var(--sv-edge); background: var(--yard); color: var(--ink); font: inherit; cursor: pointer; touch-action: manipulation; }
+.sv-tool b { font-weight: 800; }
+.sv-tool small { font-size: .72rem; color: var(--ink-soft); }
+.sv-tool[aria-pressed="true"] { border-color: var(--sv-in); background: var(--sv-in-soft); }
+.sv-tool:disabled { opacity: .45; cursor: default; }
+.sv-go { min-height: 3.125rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); font: inherit; font-size: .86rem; font-weight: 800; font-stretch: 106%; letter-spacing: calc(.07em * var(--track)); text-transform: var(--caps);
+  outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; cursor: pointer; }
+.sv-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; align-self: start; gap: .8rem; min-height: 3.4rem; }
+.sv-result .sv-go { padding: 0 1.3rem; }
+.sv-verdict { margin: 0; font-size: 1rem; font-weight: 750; line-height: 1.3; }
+.sv-verdict.good { color: var(--sv-good); }
+.sv-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 20;
+  max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.sv-toast.show { opacity: 1; }
+
+/* held sideways: the block on the left with all the height; the score, the line and the tools beside it, low where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.survey { --beside: 17rem; grid-template-rows: auto auto minmax(0, 1fr); }
+  #app.survey .sv-strip { grid-column: 2; grid-row: 2; flex-direction: column; align-items: flex-start; gap: .35rem; margin-top: 1rem; }
+  #app.survey .sv-sky { grid-column: 1; grid-row: 2 / span 2; margin-top: .8rem; }
+  #app.survey .sv-side { grid-column: 2; grid-row: 3; align-content: end; margin-top: 0; }
+  #app.survey .sv-controls { align-content: end; }
+  #app.survey .sv-tools { grid-template-columns: 1fr; }
+  #app.survey .sv-tool { min-height: 2.9rem; }
+  #app.survey .sv-result { grid-template-columns: 1fr; align-self: end; }
+}
+
+/* the menu's ladder of levels (the same three to a row as Topple's): each rock in miniature, its number, stars and name, under its chapter */
+#menuBody .sv-chap { margin: .9rem 0 .35rem; font-size: .66rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.12em * var(--track)); color: var(--brass); }
+#menuBody .sv-chap:first-child { margin-top: .4rem; }
+.sv-lgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; }
+.sv-lgrid button { display: grid; gap: .2rem; padding: .35rem .4rem .4rem; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.sv-lgrid button.done { background: var(--sv-in-soft); }
+.sv-lgrid button[aria-current] { border-color: var(--sv-in); box-shadow: inset 0 0 0 1.5px var(--sv-in); }
+.sv-lgrid button:disabled { opacity: .4; cursor: default; }
+.sv-lmap { aspect-ratio: 10 / 9; width: 100%; }
+.sv-lmap svg { width: 100%; height: 100%; display: block; }
+/* the rock's three visible faces; the strokes are in the drawing's own units (a cube is about 1.7 wide) */
+.sv-lmap polygon { stroke: var(--sheet); stroke-width: .06; stroke-linejoin: round; }
+.sv-lmap .t { fill: color-mix(in srgb, var(--sv-in) 45%, var(--sheet)); }
+.sv-lmap .l { fill: color-mix(in srgb, var(--sv-in) 78%, var(--sheet)); }
+.sv-lmap .r { fill: color-mix(in srgb, var(--sv-in) 95%, var(--ink)); }
+.sv-lrow { display: flex; justify-content: space-between; align-items: baseline; gap: .3rem; min-width: 0; }
+.sv-lrow b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.sv-lrow span { color: var(--brass); font-size: .66rem; letter-spacing: .1em; white-space: nowrap; }
+.sv-lname { font-size: .62rem; line-height: 1.2; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); color: var(--ink-soft); overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.sv-lsize { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .62rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }

@@ -1,0 +1,88 @@
+/* Delta: a field of hexes with channels between them. Paths are drawn as broad currents in their own colour;
+   numbers are the solid ink anchors; operations sit on the tiles in a narrower cut of the same face. */
+:root {
+  --d-tile: var(--tile);
+  --d-tile-edge: var(--tile-edge);
+  --d-op-tile: color-mix(in srgb, var(--brass) 12%, var(--tile));
+  --d-num: var(--ink);       /* a number's disc: navy on the page, parchment on the dial */
+  --d-num-ink: var(--yard);
+  --d-p0: #1F6E66; --d-p1: #34478F; --d-p2: #B8862F; --d-p3: #8E2F48; --d-p4: #5E7424; --d-p5: #6A3D78;
+  --d-ok: #2F7D5B; --d-no: #A8382B;
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-mode="day"]) {
+    --d-p0: #6CC0B5; --d-p1: #8E9BE0; --d-p2: #E2B865; --d-p3: #D9849F; --d-p4: #A9C25A; --d-p5: #C08FD0;
+    --d-ok: #7FC2A8; --d-no: #E8806F;
+  }
+}
+/* night, set in Settings */
+html[data-mode="night"] {
+    --d-p0: #6CC0B5; --d-p1: #8E9BE0; --d-p2: #E2B865; --d-p3: #D9849F; --d-p4: #A9C25A; --d-p5: #C08FD0;
+    --d-ok: #7FC2A8; --d-no: #E8806F;
+  }
+
+#app.delta { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; }
+.d-mark { display: inline-block; }
+.d-mark svg { width: 100%; height: 100%; display: block; }
+/* at a table: one line naming everyone in their seat's colour (one line always, so the board never moves for it) */
+.d-partner { margin: .5rem 0 0; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d-partner b { font-weight: 750; }
+.d-seat { display: inline-flex; align-items: center; gap: .3125rem; }
+.d-seat::before { content: ""; width: .5625rem; height: .5625rem; border-radius: 50%; background: var(--seat); flex: none; }
+.d-seat.away { opacity: .55; font-weight: 600; }
+.d-share { margin: 0 0 .4rem; text-align: center; font-size: .92rem; color: var(--ink-soft); }
+.d-share .d-seat { color: var(--ink); }
+
+.d-board { flex: 1; display: flex; align-items: center; justify-content: center; padding: .4rem 0; min-height: 0; }
+.d-board svg { width: 100%; max-height: calc(100svh - 11rem); touch-action: none; user-select: none; -webkit-user-select: none; }
+
+.d-tile { fill: var(--d-tile); stroke: var(--d-tile-edge); stroke-width: .05; stroke-linejoin: round; }
+.d-tile.op { fill: var(--d-op-tile); }
+.d-path { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: .5; opacity: .92; }
+.d-path.wrong { stroke-dasharray: .18 .16; }
+/* another player's path under their finger, as they draw it: thinner, dashed, their initial at its head */
+.d-live { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: .22; stroke-dasharray: .3 .2; opacity: .85; pointer-events: none; }
+.d-live-head { stroke: var(--d-tile); stroke-width: .06; pointer-events: none; }
+.d-live-who { font-family: var(--font); font-weight: 800; fill: var(--d-tile); text-anchor: middle; pointer-events: none; }
+.d-arrow { fill: var(--d-tile); opacity: .9; }
+/* board text is set at 100× and scaled down (see label() in delta.js): sizes come from there, strokes are in
+   those larger units */
+.d-op { font-family: var(--font); font-weight: 750; font-stretch: 72%; fill: var(--ink);
+  text-anchor: middle; paint-order: stroke; stroke: var(--d-tile); stroke-width: 12; stroke-linejoin: round; }
+.d-num-disc { fill: var(--d-num); }
+.d-num { font-family: var(--font); font-weight: 800; font-stretch: var(--stretch-btn); fill: var(--d-num-ink); text-anchor: middle; }
+.d-tag { font-family: var(--font); font-weight: 800; fill: var(--ink); text-anchor: middle; }
+.d-tag-disc { fill: var(--d-tile); stroke: var(--ink); stroke-width: .04; }
+.d-bubble rect { fill: var(--ink); }
+.d-bubble-text { font-family: var(--font); font-weight: 800; fill: var(--yard); text-anchor: middle; }
+.d-mark-ok { fill: var(--d-ok); }
+.d-mark-no { fill: var(--d-no); }
+.d-mark-glyph { font-family: var(--font); font-weight: 800; fill: #fff; text-anchor: middle; }
+
+.d-actions { display: flex; justify-content: center; gap: .6rem; padding: .5rem 0 .2rem; }
+.d-actions .btn { min-height: 2.625rem; min-width: 7.5rem; padding: .35rem 1rem; }
+/* held sideways (style.css, #app.beside): the board takes the height and most of the width, and the buttons stand
+   beside it, low, where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.delta { --beside: 11rem; grid-template-rows: auto auto minmax(0, 1fr) auto; }
+  .d-partner { grid-column: 2; grid-row: 2; white-space: normal; }   /* a narrow column of its own: names may wrap */
+  .d-board { grid-column: 1; grid-row: 2 / -1; padding: .4rem 0 0; }
+  .d-board svg { height: 100%; max-height: none; }
+  .d-actions { grid-column: 2; grid-row: 4; flex-direction: column; padding: 0; }
+  .d-actions .btn { min-width: 0; }
+}
+
+.d-rules { margin: .8rem 0; padding-left: 1.3rem; display: grid; gap: .55rem; }
+.d-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .4rem; margin: 1rem 0 .6rem; }
+.d-stats div { display: flex; flex-direction: column; align-items: center; gap: .1rem; text-align: center; }
+.d-stats dd { margin: 0; font-size: 1.6rem; font-weight: 800; line-height: 1.1; }
+.d-stats dt { font-size: .8rem; color: var(--ink-soft); }
+
+.d-toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 5.2rem); transform: translateX(-50%);
+  z-index: 20; max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 10px;
+  background: var(--ink); color: var(--yard); font-weight: 650; font-size: .95rem; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .18s;
+}
+.d-toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .d-toast { transition: none; } }

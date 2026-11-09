@@ -1,0 +1,23 @@
+/* Chess's lessons (Menu, Learn): a course in brass instruments, on course.css's sheet, whose
+   stage holds Gambit's board (chess-board.css) under the lesson's own marks. Colours are the suite's tokens; verdigris is the course's
+   enamel. The marks are drawn to the board's 8 by 8 units, so their lines and text are in those units. */
+:root { --cs-in: var(--c1); }
+dialog.ln-sheet.chsc { --ln-in: var(--cs-in); }
+
+/* ---------- the stage: the board as large as the room leaves it, the marks over it ---------- */
+.ln-stage.cc-stage { justify-items: center; }
+.cc-wrap { position: relative; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); }
+.cc-board, .cc-board .ch-board { width: 100%; height: 100%; }
+.cc-over { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.cc-over.tapping { pointer-events: auto; cursor: pointer; touch-action: manipulation; }
+.cc-mark { stroke: none; }
+.cc-mark.a { fill: color-mix(in srgb, var(--c2) 42%, transparent); }
+.cc-mark.b { fill: rgba(46, 158, 91, .55); }
+.cc-mark.c { fill: color-mix(in srgb, var(--c0) 55%, transparent); }
+.cc-mark.tap { fill: color-mix(in srgb, var(--c2) 55%, transparent); stroke: var(--c2); stroke-width: .06; }
+.cc-mark.bad { fill: rgba(168, 56, 43, .5); }
+.cc-arrow { stroke-width: .17; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.cc-arrow.a { fill: color-mix(in srgb, var(--c2) 85%, transparent); stroke: color-mix(in srgb, var(--c2) 85%, transparent); }
+.cc-arrow.b { fill: rgba(46, 158, 91, .85); stroke: rgba(46, 158, 91, .85); }
+.cc-arrow.bad { fill: rgba(168, 56, 43, .8); stroke: rgba(168, 56, 43, .8); }
+.cc-label { font-family: var(--font); font-size: .3px; font-weight: 800; fill: #1C2A34; paint-order: stroke; stroke: rgba(239, 227, 200, .85); stroke-width: .08px; pointer-events: none; }

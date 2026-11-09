@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080D19">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Columbiad</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="columbiad.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<!-- the whole screen is the picture (the shared full-screen frame, `full over`: the header is empty, the Codex mark opens the menu, whose
+     first entry is Back to menu). Every control is drawn over the picture: the level and its stars at the top left, the aim and Launch along
+     the bottom, or down the right side held sideways -->
+<div id="app" class="columbiad full over">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">Columbiad</button></h1>
+    <div class="top-right"><button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button></div>
+  </header>
+  <section id="table" class="cb-table" aria-label="The launch and its target">
+    <div id="stage" class="cb-stage">
+      <canvas id="scene" class="cb-scene" aria-hidden="true"></canvas>
+
+      <div id="top" class="cb-top">
+        <div class="cb-chip">
+          <span class="cb-lv"><b id="lvId"></b><span id="lvName"></span></span>
+          <span class="cb-sub"><span class="cb-shot">Shot <b id="shot">1</b></span><span id="stars" class="cb-stars" role="img"></span><span id="last" class="cb-last"></span></span>
+          <span id="goal" class="cb-goal" hidden></span>
+        </div>
+      </div>
+
+      <p id="hint" class="cb-hint" hidden></p>
+      <p id="say" class="cb-say" role="status" aria-live="polite"></p>
+
+      <!-- the aim and its power, the nudges and Launch; after a hit, how it went, in the same box -->
+      <section id="bottom" class="cb-bottom">
+        <div id="deck" class="cb-deck">
+          <div class="cb-read">
+            <span class="cb-r">Elevation <b id="elev">0.0°</b><i id="lean" aria-hidden="true"></i></span>
+            <span class="cb-r">Power <b id="pow">0.0</b><small id="cap"></small></span>
+          </div>
+          <div class="cb-gaugerow">
+            <div id="gauge" class="cb-gauge" role="meter" aria-label="Power" aria-valuemin="0"></div>
+            <button id="fine" class="cb-fine" type="button" aria-pressed="false" aria-label="Fine adjustment">Fine</button>
+          </div>
+          <div id="timeRow" class="cb-time" hidden>
+            <span class="cb-r">Fire at <b id="tval">T+0.0 s</b></span>
+            <button class="cb-tbtn" id="tL" type="button" aria-label="Earlier"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5L8 12l7 7"/></svg></button>
+            <input id="tRange" class="cb-range" type="range" min="0" max="10" step="0.1" value="0" aria-label="Launch countdown, seconds after the world starts">
+            <button class="cb-tbtn" id="tR" type="button" aria-label="Later"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+          </div>
+          <div class="cb-pad">
+            <button class="cb-nudge" id="angL" type="button" aria-label="Aim left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5L8 12l7 7"/></svg></button>
+            <button class="cb-nudge" id="angR" type="button" aria-label="Aim right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button class="cb-fire" id="fire" type="button">Launch</button>
+            <button class="cb-nudge" id="powD" type="button" aria-label="Less power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+            <button class="cb-nudge" id="powU" type="button" aria-label="More power"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+          </div>
+        </div>
+        <div id="result" class="cb-result" hidden>
+          <p id="verdict" class="cb-verdict"></p>
+          <div class="cb-acts">
+            <button class="cb-go" type="button" id="nextBtn">Next level</button>
+            <button class="cb-go quiet" type="button" id="againBtn">Again</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<script type="module" src="columbiad.js"></script>
+</body>
+</html>

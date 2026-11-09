@@ -1,0 +1,56 @@
+/* Chess's puzzle rush (rush.html): the count, the clock and the strikes over the board, what to do above it, what the
+   puzzle was under it, the buttons low, as River's rush stands on River's page. Chess's enamel and buttons (gambit.css)
+   and its board (chess-board.css); verdigris and oxblood for a solve and a miss. */
+:root { --ru-good: #2F7D5B; --ru-bad: #A8382B; }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) { --ru-good: #7FC2A8; --ru-bad: #E8806F; } }
+/* night, set in Settings */
+html[data-mode="night"] { --ru-good: #7FC2A8; --ru-bad: #E8806F; }
+
+.ru-hud { display: flex; justify-content: space-between; align-items: center; gap: .6rem; min-height: 2.6rem; margin-top: .35rem; }
+.ru-solved { font-size: .95rem; color: var(--ink-soft); line-height: 1.1; }
+.ru-solved > b { font-size: 1.6rem; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ru-rating { display: block; font-size: .78rem; }
+.ru-rating b { font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* at a battle, the others' counts where the rating was (duel.js fills it; a tap opens the match) */
+.ru-rival { display: block; max-width: 48vw; font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ru-rating[hidden], .ru-rival[hidden] { display: none; }
+.ru-clock { font-size: 1.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ru-clock.low { color: var(--ru-bad); }
+.ru-strikes { display: flex; gap: .3rem; }
+.ru-strike { width: .875rem; height: .875rem; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--tile-edge); }
+.ru-strike.hit { background: var(--ru-bad); box-shadow: none; }
+/* what to do, or what the line was: two lines kept for it, so the board doesn't move as a long line comes and goes */
+.ru-line { margin: .3rem 0 0; height: calc(2 * 1.3em); overflow: hidden; font-size: 1rem; font-weight: 800; line-height: 1.3; }
+.ru-line.good { color: var(--ru-good); }
+.ru-line.bad { color: var(--ru-bad); }
+/* the board: square, the full width of a phone, or as tall as the room left */
+.ru-stage { margin: .3rem -1rem 0; min-height: 0; }
+.ru-board { width: min(100cqw, 100cqh); aspect-ratio: 1; }
+.ru-board .ch-board { width: 100%; height: 100%; }
+.ru-meta { margin: .3rem 0 0; height: 1.3em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: .88rem; line-height: 1.3; color: var(--ink-soft); }
+.ru-bar { display: flex; gap: .5rem; margin-top: .4rem; min-height: 2.75rem; }
+.ru-bar > .gb-go { flex: 1 1 0; min-width: 0; }
+
+/* the results */
+.ru-big { margin: .2rem 0; font-size: 3rem; font-weight: 800; color: var(--gb-in); text-align: center; font-variant-numeric: tabular-nums; }
+.ru-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .6rem 0; }
+.ru-stats div { padding: .5rem .2rem; border-radius: 5px; background: var(--yard); text-align: center; }
+.ru-stats b { display: block; font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ru-stats span { font-size: .75rem; color: var(--ink-soft); }
+.ru-note { margin: .6rem 0 .3rem; font-size: .92rem; }
+.ru-missed { margin: .3rem 0 0; padding: 0; list-style: none; display: grid; gap: .3rem; font-size: .9rem; }
+.ru-missed li { display: flex; justify-content: space-between; gap: .6rem; }
+.ru-missed a { color: var(--gb-in); font-weight: 750; text-decoration: none; }
+.ru-end-go { display: flex; gap: .5rem; margin-top: .9rem; }
+.ru-end-go .gb-go { flex: 1 1 0; }
+
+/* held sideways (#app.beside): the board on the left with all the height; the count and the clock, what to do and what
+   the puzzle was beside it, the buttons low where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.rush { --beside: 19rem; grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+  #app.rush .ru-stage { grid-column: 1; grid-row: 2 / -1; margin: .5rem 0 0; }
+  #app.rush .ru-hud { grid-column: 2; grid-row: 2; margin-top: .9rem; }
+  #app.rush .ru-line { grid-column: 2; grid-row: 3; height: calc(4 * 1.3em); margin-top: .6rem; }
+  #app.rush .ru-meta { grid-column: 2; grid-row: 4; height: calc(2 * 1.3em); white-space: normal; }
+  #app.rush .ru-bar { grid-column: 2; grid-row: 6; }
+}

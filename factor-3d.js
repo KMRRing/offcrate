@@ -1,0 +1,828 @@
+// Factor's island in 3D, drawn with three.js (vendor/three.js, kept on the device, so it plays offline): a quiet table, a
+// sea in a wooden frame, nineteen bevelled tiles each with its land on it (pines, brick stacks, sheep, sheaves, rock,
+// dunes), number tokens, harbours with their jetties, and the pieces standing on it: roads as beams, posts as houses,
+// factories with a saw-tooth roof and a chimney, the blockade as a ship. Two ivory dice roll onto the table for every
+// roll. Everything is built in code, no models and no textures, so it's there offline and the same at any size.
+// What has to read sharp (the tokens' numbers, the harbours' rates) and every place a tap may go are an SVG laid over the
+// canvas through the camera's own projection, with the same data-v, data-e and data-h the flat island uses, so the page
+// handles a tap the same either way. The player turns and tilts the camera by dragging (factor-camera.js has the maths).
+// It draws only while something moves. factor.js drives it: set, resetView, dispose.
+import * as THREE from "./vendor/three.js";
+import { HEXES, VERTS, EDGES, PORT_AT, portOut, portVerts, pips } from "./factor-board.js";
+import { DEG, DIST, LOOK, FITTED, clampElev, clampZoom, wrapYaw, viewIn, isFitted, encode, decode, flick, coasted } from "./factor-camera.js";
+import { placesOf } from "./factor-props.js";
+import { scale as pageScale } from "./wide.js";
+
+const SQ3 = Math.sqrt(3);
+const PCF = 1;                                                // THREE.PCFShadowMap (not in the bundle's exports)
+const TILE = 0.955, TILE_H = 0.15, BEV = 0.035;               // a tile's circumradius (a hair under 1, so they part), height, bevel
+const TOP = TILE_H;                                           // the land's top: everything stands on it
+// How big each land's props stand (rock is drawn at its own size): about as big as five fit round a token, so one reads
+// at a glance. tests/factor-props.mjs holds each to the room a tile has (its FOOT).
+const PROP = { pine: 1.3, brick: 1.25, sheep: 1.3, sheaf: 1.35 };
+const SEA = 0, FLOOR = -0.08;                                  // the sea's surface; the frame's floor under the tiles
+const PORT_AWAY = 0.72;
+
+// ---------- the skins ----------
+// The table, its frame and the light for each theme by day and by night. The land's colours are the game's own and come
+// from factor.css (--r0..--r5, --sea), the seats' from style.css (--p0..--p3), so they follow the page.
+const SKINS = {
+  codex: {
+    day: { table: [0x6e5038, 0x5a3f2a], grain: 1, rim: 0x4a2c17, rimTop: 0xc49a3e, sun: 0xfff1d8, sunI: 2.6, sunAt: [-5, 12, 7], sky: 0xfff4de, ground: 0x6f5c45, hemi: 1.05, exposure: 1.05 },
+    night: { table: [0x37281c, 0x2c1f15], grain: 1, rim: 0x2d1a0d, rimTop: 0xb38c38, sun: 0xc4d4f0, sunI: 1.9, sunAt: [-5, 12, 6], sky: 0x8fa3cc, ground: 0x24242a, hemi: 0.85, exposure: 1.2 },
+  },
+  office: {
+    day: { table: [0xd6d8db, 0xcdd0d4], grain: 0, rim: 0x8a8f96, rimTop: 0xf3f3f3, sun: 0xffffff, sunI: 2.3, sunAt: [-5, 12, 8], sky: 0xffffff, ground: 0xc4c8cc, hemi: 1.2, exposure: 1.0 },
+    night: { table: [0x2c2f34, 0x26292d], grain: 0, rim: 0x1b1d20, rimTop: 0x479ef5, sun: 0xcfd8e6, sunI: 1.7, sunAt: [-5, 12, 6], sky: 0x9aa6b8, ground: 0x15171a, hemi: 0.9, exposure: 1.2 },
+  },
+};
+/** The skin in force: the suite's theme and day or night (as set, else as the device), with the page's colours. */
+export function skinNow() {
+  const root = document.documentElement, theme = SKINS[root.dataset.theme] ? root.dataset.theme : "codex";
+  const night = root.dataset.mode ? root.dataset.mode === "night" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const css = getComputedStyle(root), pick = (name, or) => {
+    const v = (css.getPropertyValue(name) || "").trim();
+    return /^#[0-9a-f]{3,8}$/i.test(v) ? v : or;               // a colour three.js can read (not a color-mix())
+  };
+  return {
+    name: `${theme} ${night ? "night" : "day"}`, night, ...SKINS[theme][night ? "night" : "day"],
+    land: ["--r0", "--r1", "--r2", "--r3", "--r4", "--r5"].map((n, i) => pick(n, ["#3F7F50", "#B5573B", "#B9CF86", "#DDB84C", "#7B8896", "#DCCB9B"][i])),
+    sea: pick("--sea", "#C9D9DA"), disc: pick("--disc", "#F4EBD3"),
+    seats: ["--p0", "--p1", "--p2", "--p3"].map((n, i) => pick(n, ["#2C5B8A", "#B4632A", "#2F7D5B", "#7E3F7A"][i])),
+  };
+}
+
+// ---------- surfaces worked out in the shader: the table's grain, the sea's ripples, a tile's print ----------
+const NOISE = `
+varying vec3 vP;
+float h21(vec2 p) { vec3 q = fract(vec3(p.xyx) * .1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(h21(i), h21(i + vec2(1., 0.)), f.x), mix(h21(i + vec2(0., 1.)), h21(i + vec2(1., 1.)), f.x), f.y); }
+float fbm(vec2 p) { float s = 0., a = .5; for (int i = 0; i < 4; i++) { s += a * n2(p); p = p * 2.03 + 7.3; a *= .5; } return s; }`;
+const TURN = { value: 0 };                                                // how far the island is turned (one island at a time)
+/** A standard material whose colour the fragment shader works on (`main` sets diffuseColor.rgb from vP, the island's own
+ *  point: the grain and the print are the island's, so they turn with it and don't swim as the camera goes round). */
+function worked(params, main, uniforms = {}) {
+  const m = new THREE.MeshStandardMaterial(params);
+  m.customProgramCacheKey = () => main;                                   // else three.js shares one program among them all
+  m.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.uniforms.uTurn = TURN;
+    shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vP;\nuniform float uTurn;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvP = (modelMatrix * vec4(position, 1.)).xyz;\n{ float c = cos(uTurn), s = sin(uTurn); vP.xz = vec2(vP.x * c - vP.z * s, vP.x * s + vP.z * c); }");
+    shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>\n${NOISE}\n${Object.keys(uniforms).map(k => `uniform vec3 ${k};`).join("\n")}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>\n{ ${main} }`);
+  };
+  return m;
+}
+// the table: long streaks of grain for wood (uGrain 1), a fine weave for cloth (0)
+const TABLE_MAIN = `
+  vec2 p = vP.xz;
+  float w = fbm(vec2(p.x * .35, p.y * 2.6));
+  float streak = .5 + .5 * sin(p.y * 7. + w * 9.);
+  float wood = clamp(.5 + (streak - .5) * .45 + (w - .45) * .6, 0., 1.);
+  float weave = .5 + .25 * (sin(p.x * 140.) + sin(p.y * 140.)) * .5 + .25 * n2(p * 30.);
+  float t = mix(weave, wood, uGrain.x);
+  diffuseColor.rgb = mix(uDark, uLight, t) * (.95 + .1 * n2(p * 60.));`;
+// the sea: slow swells and a glint, lighter in the shallows by the land
+const SEA_MAIN = `
+  vec2 p = vP.xz;
+  float sw = fbm(p * .9 + vec2(0., 3.)) + .35 * sin(p.x * 2.1 + p.y * 1.3 + fbm(p * 1.7) * 3.);
+  float r = length(p);
+  float shallow = 1. - smoothstep(4.3, 5.4, max(abs(p.y), .8660254 * abs(p.x) + .5 * abs(p.y)));
+  diffuseColor.rgb *= .9 + .14 * sw + .1 * shallow;`;
+// a tile's land: its colour, mottled as a printed tile is
+const LAND_MAIN = `
+  float m = fbm(vP.xz * 2.4);
+  diffuseColor.rgb *= .9 + .2 * m;`;
+
+// ---------- geometry ----------
+const geos = new Map();
+const geo = (key, make) => { if (!geos.has(key)) geos.set(key, make()); return geos.get(key); };
+const M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+/** Geometries, each moved by its matrix, put into one (non-indexed, normals kept): the land's props in one draw a material. */
+function merge(parts) {
+  const pos = [], nor = [];
+  for (const [g, m] of parts) {
+    const c = (g.index ? g.toNonIndexed() : g.clone()).applyMatrix4(m);
+    for (const v of c.attributes.position.array) pos.push(v);
+    for (const v of c.attributes.normal.array) nor.push(v);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return out;
+}
+const at = (x, y, z, yaw = 0, sx = 1, sy = sx, sz = sx) => new THREE.Matrix4().compose(V.set(x, y, z), Q.setFromAxisAngle(UP, yaw), S.set(sx, sy, sz));
+/** A hexagon in the x-z plane (a point toward -z when `pointy`), as a shape for extruding. */
+function hexShape(R, pointy) {
+  const s = new THREE.Shape();
+  for (let k = 0; k < 6; k++) {
+    const a = (60 * k + (pointy ? -30 : 0)) * DEG;
+    (k ? s.lineTo : s.moveTo).call(s, R * Math.cos(a), R * Math.sin(a));
+  }
+  s.closePath();
+  return s;
+}
+/** A shape extruded upward from y0 by h (the shape's y becoming z), bevelled. */
+function slab(shape, y0, h, bev = 0, segs = 2) {
+  const g = new THREE.ExtrudeGeometry(shape, { depth: Math.max(0.001, h - 2 * bev), bevelEnabled: bev > 0, bevelThickness: bev, bevelSize: bev, bevelSegments: segs, curveSegments: 6 });
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, y0 + bev, 0);
+  return g;
+}
+/** A box with rounded edges and corners (r of its half-size), for the dice. */
+function roundedBox(size, r, seg = 5) {
+  const g = new THREE.BoxGeometry(size, size, size, seg, seg, seg), p = g.attributes.position, h = size / 2, inner = h - r;
+  for (let i = 0; i < p.count; i++) {
+    V.set(p.getX(i), p.getY(i), p.getZ(i));
+    const c = new THREE.Vector3(Math.max(-inner, Math.min(inner, V.x)), Math.max(-inner, Math.min(inner, V.y)), Math.max(-inner, Math.min(inner, V.z)));
+    V.sub(c).normalize().multiplyScalar(r).add(c);
+    p.setXYZ(i, V.x, V.y, V.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+/** A triangular prism (a roof): w across, h high, d long (along z), its foot at y 0. */
+function prism(w, h, d) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(0, h); s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: d, bevelEnabled: false });
+  g.translate(0, 0, -d / 2);
+  return g;
+}
+
+// the pieces, each one geometry: a post is a house, a factory a long shed with a saw-tooth roof and a chimney
+const POST = () => geo("post", () => merge([
+  [new THREE.BoxGeometry(0.3, 0.21, 0.25), at(0, 0.105, 0)],
+  [prism(0.35, 0.18, 0.3), at(0, 0.21, 0, Math.PI / 2)],
+]));
+const FACTORY = () => geo("factory", () => merge([
+  [new THREE.BoxGeometry(0.5, 0.24, 0.34), at(0, 0.12, 0)],
+  ...[-0.167, 0, 0.167].map(x => [prism(0.167, 0.13, 0.34), at(x, 0.24, 0)]),
+  [new THREE.CylinderGeometry(0.042, 0.05, 0.32, 10), at(0.18, 0.4, -0.1)],
+]));
+const ROAD = () => geo("road", () => {
+  const g = new THREE.BoxGeometry(0.64, 0.1, 0.15);
+  g.translate(0, 0.05, 0);
+  return g;
+});
+// the blockade: a dark hull, a mast, two sails
+function shipParts() {
+  const hull = new THREE.Shape();
+  hull.moveTo(-0.34, 0.1); hull.lineTo(0.38, 0.1); hull.quadraticCurveTo(0.3, -0.04, 0.2, -0.05); hull.lineTo(-0.26, -0.05); hull.quadraticCurveTo(-0.33, 0, -0.34, 0.1);
+  const h = new THREE.ExtrudeGeometry(hull, { depth: 0.18, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.015, bevelSegments: 2 });
+  h.translate(0, 0.05, -0.09);
+  const sail = (w, ht, x) => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(w, 0); s.quadraticCurveTo(w * 0.8, ht * 0.5, 0, ht); s.closePath(); const g = new THREE.ShapeGeometry(s); g.translate(x, 0.2, 0.012); return g; };
+  return {
+    hull: h,
+    mast: merge([[new THREE.CylinderGeometry(0.014, 0.018, 0.5, 6), at(0.02, 0.4, 0)]]),
+    sails: merge([[sail(0.26, 0.4, 0.035), at(0, 0, 0)], [sail(-0.2, 0.3, 0.005), at(0, 0, 0)]]),
+  };
+}
+
+// ---------- the dice ----------
+const DIE = 0.52;
+// which face shows which number: opposite faces make seven
+const FACES = [[new THREE.Vector3(0, 1, 0), 1], [new THREE.Vector3(0, -1, 0), 6], [new THREE.Vector3(1, 0, 0), 2], [new THREE.Vector3(-1, 0, 0), 5], [new THREE.Vector3(0, 0, 1), 3], [new THREE.Vector3(0, 0, -1), 4]];
+const PIP_AT = { 1: [[0, 0]], 2: [[-1, -1], [1, 1]], 3: [[-1, -1], [0, 0], [1, 1]], 4: [[-1, -1], [1, -1], [-1, 1], [1, 1]], 5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]], 6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]] };
+const DIE_PIPS = () => geo("pips", () => {
+  const parts = [], g = new THREE.SphereGeometry(0.036, 10, 6), off = DIE * 0.24;
+  for (const [n, value] of FACES) {
+    const u = Math.abs(n.y) > 0.5 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0), w = new THREE.Vector3().crossVectors(n, u);
+    for (const [a, b] of PIP_AT[value]) {
+      const big = value === 1 ? 1.5 : 1;
+      const c = n.clone().multiplyScalar(DIE / 2 - 0.012).addScaledVector(u, a * off).addScaledVector(w, b * off);
+      parts.push([g, new THREE.Matrix4().compose(c, new THREE.Quaternion(), new THREE.Vector3(big, big, big))]);
+    }
+  }
+  return merge(parts);
+});
+/** The die's turn that shows `value` on top, turned `yaw` about the vertical. */
+function showing(value, yaw) {
+  const n = FACES.find(f => f[1] === value)[0];
+  return new THREE.Quaternion().setFromAxisAngle(UP, yaw).multiply(new THREE.Quaternion().setFromUnitVectors(n, UP));
+}
+
+// ---------- where the island lies: its harbours, the sea's size, and the points the camera fits to the box ----------
+/** How far a point is from the middle in hexagon-distance (the flat-topped hexagon of the island's own outline). */
+const hexR = p => Math.max(Math.abs(p[1]), (SQ3 / 2) * Math.abs(p[0]) + Math.abs(p[1]) / 2);
+const portPos = i => { const e = EDGES[PORT_AT[i]], [ux, uy] = portOut(PORT_AT[i]); return [e.x + ux * PORT_AWAY, e.y + uy * PORT_AWAY]; };
+const APO = Math.max(...VERTS.map(v => hexR([v.x, v.y])), ...PORT_AT.map((_, i) => hexR(portPos(i)) + 0.36)) + 0.25;   // the sea's apothem
+/** The land and the harbours, not the frame or the dice: [x, y, z] points the camera keeps in the box (tests/factor-camera.mjs fits it too). */
+export const OUTLINE = [];
+for (const v of VERTS) OUTLINE.push([v.x, TOP, v.y], [v.x, -0.05, v.y]);
+PORT_AT.forEach((_, i) => { const [px, pz] = portPos(i); for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; OUTLINE.push([px + 0.36 * Math.cos(a), SEA + 0.1, pz + 0.36 * Math.sin(a)]); } });
+OUTLINE.push([0, 0.6, -APO + 0.3]);                                      // a factory's chimney on the top row
+
+// ---------- the island ----------
+/**
+ * The island in `host`. `view` is the camera the player last arranged (the text `onView` was given: see factor-camera.js;
+ * none is the fitted one); `onView(text | null)` hears each time they let go of it, to keep it for this device.
+ */
+export function createIsland(host, { view: saved = null, onView = () => {} } = {}) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "low-power" });   // throws where there's no WebGL: the page draws flat
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCF;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  const canvas = renderer.domElement;
+  canvas.className = "fc-gl";
+  const NS = "http://www.w3.org/2000/svg", over = document.createElementNS(NS, "svg");
+  over.setAttribute("class", "fc-over");
+  host.replaceChildren(canvas, over);
+
+  const scene = new THREE.Scene(), world = new THREE.Group();
+  scene.add(world);
+  // a perspective camera from an orthographic one's parts (the bundle has no perspective camera): its matrix is set by hand
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+  camera.isOrthographicCamera = false;
+  camera.isPerspectiveCamera = true;
+  camera.updateProjectionMatrix = () => {};
+
+  const sun = new THREE.DirectionalLight(0xffffff, 2.5), hemi = new THREE.HemisphereLight(0xffffff, 0x666666, 1);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1536, 1536);
+  Object.assign(sun.shadow.camera, { left: -8.5, right: 8.5, top: 8.5, bottom: -8.5, near: 1, far: 40 });
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.02;
+  scene.add(sun, sun.target, hemi);
+
+  // ---------- materials ----------
+  const TU = { uLight: { value: new THREE.Color() }, uDark: { value: new THREE.Color() }, uGrain: { value: new THREE.Color() } };
+  const tableMat = worked({ color: 0xffffff, roughness: 0.75 }, TABLE_MAIN, TU);
+  const seaMat = worked({ color: 0xffffff, roughness: 0.35, metalness: 0.05 }, SEA_MAIN);
+  const rimMat = new THREE.MeshStandardMaterial({ roughness: 0.55 }), rimTopMat = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.5 });
+  const landMats = [0, 1, 2, 3, 4, 5].map(() => worked({ color: 0xffffff, roughness: 0.85 }, LAND_MAIN));
+  const mat = (roughness = 0.7, metalness = 0) => new THREE.MeshStandardMaterial({ roughness, metalness });
+  const M = {
+    leaf: mat(0.8), trunk: mat(0.9), brick: mat(0.85), brickPale: mat(0.85), sheep: mat(0.95), head: mat(0.8), sheaf: mat(0.8),
+    rock: mat(0.9), rockPale: mat(0.9), sand: mat(1), disc: mat(0.6), plank: mat(0.85), post: mat(0.8), sign: mat(0.6),
+    hull: mat(0.6), sail: mat(0.9), ivory: mat(0.35), pip: mat(0.5),
+  };
+  M.sail.side = 2;                                                       // THREE.DoubleSide
+  const seatMats = [0, 1, 2, 3].map(() => mat(0.45, 0.05));
+  const portMats = [0, 1, 2, 3, 4].map(() => mat(0.6));
+
+  // ---------- the table and the sea in its frame ----------
+  // the frame is a flat-topped hexagon round the island and its harbours (the island's own outline is flat-topped)
+  const RIM = 0.32, FR = (APO + RIM) / (SQ3 / 2);                         // the frame's width and its outer circumradius
+  const table = new THREE.Mesh(new THREE.BoxGeometry(60, 0.2, 60), tableMat);
+  table.position.y = -0.32;
+  table.receiveShadow = true;
+  const seaGeo = slab(hexShape(APO / (SQ3 / 2), false), -0.22, 0.22 + SEA);
+  const sea = new THREE.Mesh(seaGeo, seaMat);
+  sea.receiveShadow = true;
+  const ring = new THREE.Shape(), hole = hexShape(APO / (SQ3 / 2), false);
+  for (let k = 0; k < 6; k++) { const a = 60 * k * DEG; (k ? ring.lineTo : ring.moveTo).call(ring, FR * Math.cos(a), FR * Math.sin(a)); }
+  ring.closePath();
+  ring.holes.push(hole);
+  const rim = new THREE.Mesh(slab(ring, -0.22, 0.3, 0.04), rimMat);
+  rim.castShadow = true; rim.receiveShadow = true;
+  const ring2 = new THREE.Shape();
+  const ri = APO / (SQ3 / 2) + 0.05, rOut = ri + 0.05;
+  for (let k = 0; k < 6; k++) { const a = 60 * k * DEG; (k ? ring2.lineTo : ring2.moveTo).call(ring2, rOut * Math.cos(a), rOut * Math.sin(a)); }
+  ring2.closePath();
+  ring2.holes.push(hexShape(ri, false));
+  const rimLine = new THREE.Mesh(slab(ring2, 0.079, 0.006), rimTopMat);
+  world.add(table, sea, rim, rimLine);
+
+  // ---------- the land: rebuilt when the island changes ----------
+  const land = new THREE.Group();
+  world.add(land);
+  const tileGeo = slab(hexShape(TILE - BEV, true), FLOOR, TILE_H - FLOOR + 0.0, BEV, 2);
+  let built = "";
+  function buildLand(s) {
+    const key = `${s.kind.join("")}|${s.num.join(",")}|${s.ports.join(",")}`;
+    if (key === built) return;
+    built = key;
+    for (const c of [...land.children]) { land.remove(c); if (c.userData.own) c.geometry.dispose(); }
+    const bucket = new Map(), put = (m, g, mx) => { if (!bucket.has(m)) bucket.set(m, []); bucket.get(m).push([g, mx]); };
+    const rnd = seed => () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    HEXES.forEach((h, i) => {
+      const t = s.kind[i], tile = new THREE.Mesh(tileGeo, landMats[t]);
+      tile.position.set(h.x, 0, h.y);
+      tile.castShadow = true; tile.receiveShadow = true;
+      land.add(tile);
+      const r = rnd(1000 + i * 7919 + t * 31), y = TOP + 0.002;
+      // as many as the number's pips, in the places that count has (factor-props.js: clear of the token, inside the tile);
+      // each prop its own size and way round
+      const spots = placesOf(t, s.num[i]).map(p => [h.x + p.x * TILE, h.y + p.z * TILE]);
+      if (t === 0) for (const [x, z] of spots) {                              // forest: pines
+        const k = (0.85 + r() * 0.3) * PROP.pine;
+        put(M.trunk, geo("trunk", () => new THREE.CylinderGeometry(0.022, 0.03, 0.08, 6)), at(x, y + 0.04 * k, z, 0, k));
+        put(M.leaf, geo("pine", () => new THREE.ConeGeometry(0.1, 0.26, 7)), at(x, y + (0.08 + 0.13) * k, z, r() * 3, k));
+        put(M.leaf, geo("pine2", () => new THREE.ConeGeometry(0.075, 0.18, 7)), at(x, y + (0.08 + 0.24) * k, z, r() * 3, k));
+      } else if (t === 1) for (const [x, z] of spots) {                       // clay pits: stacks of bricks
+        const yaw = r() * Math.PI, q = PROP.brick;
+        for (let l = 0; l < 3; l++) for (let b = 0; b < 3 - l; b++) {
+          const off = (b - (2 - l) / 2) * 0.1 * q, c = Math.cos(yaw), n = Math.sin(yaw);
+          put(l % 2 ? M.brickPale : M.brick, geo("brick", () => new THREE.BoxGeometry(0.09, 0.045, 0.06)), at(x + off * c, y + (0.0225 + l * 0.047) * q, z - off * n, yaw, q));
+        }
+      } else if (t === 2) for (const [x, z] of spots) {                       // pasture: sheep
+        const yaw = r() * Math.PI * 2, c = Math.cos(yaw), n = Math.sin(yaw), q = PROP.sheep;
+        put(M.sheep, geo("fleece", () => new THREE.SphereGeometry(0.075, 12, 8)), at(x, y + 0.085 * q, z, yaw, 1.35 * q, 0.95 * q, q));
+        put(M.head, geo("head", () => new THREE.SphereGeometry(0.036, 10, 6)), at(x + 0.1 * q * c, y + 0.1 * q, z - 0.1 * q * n, yaw, 1.2 * q, q, q));
+        for (const [fx, fz] of [[0.05, 0.035], [0.05, -0.035], [-0.05, 0.035], [-0.05, -0.035]]) put(M.head, geo("leg", () => new THREE.CylinderGeometry(0.01, 0.01, 0.05, 5)), at(x + (fx * c + fz * n) * q, y + 0.025 * q, z + (fz * c - fx * n) * q, 0, q));
+      } else if (t === 3) for (const [x, z] of spots) {                       // fields: sheaves
+        const k = (0.85 + r() * 0.3) * PROP.sheaf;
+        put(M.sheaf, geo("sheaf", () => new THREE.CylinderGeometry(0.05, 0.035, 0.2, 8)), at(x, y + 0.1 * k, z, 0, k));
+        put(M.sheaf, geo("ear", () => new THREE.ConeGeometry(0.065, 0.09, 8)), at(x, y + 0.235 * k, z, 0, k));
+      } else if (t === 4) for (const [x, z] of spots) {                       // hills: rock, no wider than the footprint factor-props.js leaves
+        const k = 0.75 + r() * 0.25;
+        put(M.rock, geo("peak", () => new THREE.ConeGeometry(0.2, 0.36, 5)), at(x, y + 0.18 * k, z, r() * 3, k));
+        put(M.rockPale, geo("cap", () => new THREE.ConeGeometry(0.075, 0.13, 5)), at(x, y + 0.295 * k, z, r() * 3, k));
+      } else for (const [x, z] of spots) {                                    // dunes: mounds of sand, drawn in toward the middle
+        put(M.sand, geo("dune", () => new THREE.SphereGeometry(0.26, 14, 8)), at(x * 0.85 + h.x * 0.15, y - 0.02, z * 0.85 + h.y * 0.15, r() * 3, 1, 0.32, 0.75));
+      }
+      if (s.num[i]) {                                                        // the number token
+        const disc = new THREE.Mesh(geo("token", () => new THREE.CylinderGeometry(0.29, 0.29, 0.045, 28)), M.disc);
+        disc.position.set(h.x, TOP + 0.0225, h.y);
+        disc.castShadow = true; disc.receiveShadow = true;
+        land.add(disc);
+      }
+    });
+    // the harbours: two jetties out from the shore to a round landing in the harbour's colour, on a post
+    PORT_AT.forEach((_, i) => {
+      const [px, pz] = portPos(i), k = s.ports[i];
+      for (const v of portVerts(i)) {
+        const A = VERTS[v], dx = px - A.x, dz = pz - A.y, len = Math.hypot(dx, dz);
+        put(M.plank, geo("plank", () => new THREE.BoxGeometry(1, 0.03, 0.07)), at((A.x + px) / 2, SEA + 0.03, (A.y + pz) / 2, -Math.atan2(dz, dx), len, 1, 1));
+      }
+      put(M.post, geo("pile", () => new THREE.CylinderGeometry(0.035, 0.035, 0.3, 8)), at(px, SEA - 0.11, pz));   // under the landing, not through it
+      const sign = new THREE.Mesh(geo("landing", () => new THREE.CylinderGeometry(0.33, 0.33, 0.05, 28)), k === "any" ? M.sign : portMats[k]);
+      sign.position.set(px, SEA + 0.07, pz);
+      sign.castShadow = true; sign.receiveShadow = true;
+      land.add(sign);
+    });
+    for (const [m, parts] of bucket) {
+      const mesh = new THREE.Mesh(merge(parts), m);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.own = true;
+      land.add(mesh);
+    }
+  }
+
+  // ---------- the pieces ----------
+  const pieces = new THREE.Group();
+  world.add(pieces);
+  const roadMesh = new Map(), houseMesh = new Map();                       // by edge, by corner
+  const ship = new THREE.Group(), sp = shipParts();
+  for (const [g, m] of [[sp.hull, M.hull], [sp.mast, M.hull], [sp.sails, M.sail]]) { const o = new THREE.Mesh(g, m); o.castShadow = true; ship.add(o); }
+  world.add(ship);
+  const dice = [0, 1].map(() => {
+    const d = new THREE.Group(), body = new THREE.Mesh(geo("die", () => roundedBox(DIE, 0.07)), M.ivory), dots = new THREE.Mesh(DIE_PIPS(), M.pip);
+    body.castShadow = true; body.receiveShadow = true;
+    d.add(body, dots);
+    d.visible = false;
+    scene.add(d);
+    return d;
+  });
+  // the dice lie on the table in the view's free corner, bottom right unless the land is there, and stay in it as the island turns
+  let DICE_AT = [[FR * 0.66, APO * 0.97, DIE / 2 - 0.22], [FR * 0.86, APO * 0.8, DIE / 2 - 0.22]];   // [x, z, y]: set by the camera
+
+  // ---------- the skin ----------
+  let skin = skinNow();
+  const C = new THREE.Color(), shade = (hex, k, to = 0x000000) => new THREE.Color(hex).lerp(C.set(to), k);
+  function applySkin() {
+    skin = skinNow();
+    TU.uLight.value.set(skin.table[0]); TU.uDark.value.set(skin.table[1]); TU.uGrain.value.setRGB(skin.grain, 0, 0);
+    seaMat.color.set(skin.sea).lerp(C.set(skin.night ? 0x0d2a38 : 0x2a6d88), skin.night ? 0.3 : 0.72);
+    rimMat.color.set(skin.rim); rimTopMat.color.set(skin.rimTop);
+    skin.land.forEach((c, i) => landMats[i].color.set(c));
+    const [timber, clay, wool, grain, iron, dunes] = skin.land;
+    M.leaf.color.copy(shade(timber, 0.38)); M.trunk.color.set(0x5b3b22);
+    M.brick.color.copy(shade(clay, 0.12)); M.brickPale.color.copy(shade(clay, 0.25, 0xffffff));
+    M.sheep.color.set(skin.night ? 0xd9d4c8 : 0xf6f2e8); M.head.color.set(0x3a332c);
+    M.sheaf.color.copy(shade(grain, 0.25, 0xffffff));
+    M.rock.color.copy(shade(iron, 0.22)); M.rockPale.color.copy(shade(iron, 0.4, 0xffffff));
+    M.sand.color.copy(shade(dunes, 0.1, 0xffffff));
+    M.disc.color.set(skin.disc); M.sign.color.set(skin.disc);
+    M.plank.color.set(0x8a6a44); M.post.color.set(0x5b4630);
+    M.hull.color.set(0x2e2219); M.sail.color.set(skin.night ? 0xc0503c : 0x9c3427);
+    M.ivory.color.set(0xf4ecda); M.pip.color.set(0x1d1a16);
+    portMats.forEach((m, i) => m.color.copy(shade(skin.land[i], 0.1, 0xffffff)));
+    seatMats.forEach((m, i) => m.color.set(skin.seats[i]));
+    sun.color.set(skin.sun); sun.intensity = skin.sunI; sun.position.set(...skin.sunAt);
+    hemi.color.set(skin.sky); hemi.groundColor.set(skin.ground); hemi.intensity = skin.hemi;
+    renderer.toneMappingExposure = skin.exposure;
+    const bg = shade(skin.table[1], 0.35);
+    renderer.setClearColor(bg, 1);
+    invalidate();
+  }
+
+  // ---------- the camera: the island fitted to the box at whatever angle, turned and tilted by the hand ----------
+  // The fit is to the land and the harbours, not the frame or the dice: the island fills the width (the frame and the table
+  // run off the edges), or the height where the box is too short for that, at every pose, so turning never cuts it off.
+  // The island is what turns (the world group); the camera and the sun stay put on the screen, so every angle is lit from
+  // the same side and the ship, turned to face the camera, always shows her sails.
+  const lookAt = new THREE.Vector3(...LOOK);
+  const LAND = [...VERTS.map(v => [v.x, v.y, 0]), ...PORT_AT.map((_, i) => [...portPos(i), 0.33])];   // what the dice must keep clear of: [x, z, radius]
+  let width = 1, height = 1;
+  let arranged = decode(saved);                                          // what the player has set: their turn, zoom and move
+  let yaw = 0, elev = 55 * DEG, zoom = 1, panU = 0, panV = 0;           // the pose in force
+  let base = { cu: 0, cv: 0, hu: 1, hv: 1 };                             // the frustum that fits the island at it, before the zoom
+  let overStale = false;
+  function pose() {
+    camera.position.set(0, Math.sin(elev) * DIST, Math.cos(elev) * DIST).add(lookAt);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(lookAt);
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  }
+  /** Brings the camera, the island's turn, the ship and the dice to what `arranged` asks of this box; draws on the next frame. */
+  function applyView() {
+    ({ yaw, elev, base, zoom, panU, panV } = viewIn(arranged, OUTLINE, width, height));
+    world.rotation.y = yaw;
+    world.updateMatrixWorld(true);
+    TURN.value = yaw;
+    ship.rotation.y = -yaw + 0.3;                                        // broadside on, so her sails are seen
+    pose();
+    const hu = base.hu / zoom, hv = base.hv / zoom, cu = base.cu + panU, cv = base.cv + panV;
+    camera.projectionMatrix.makePerspective(cu - hu, cu + hu, cv + hv, cv - hv, 1, 200);
+    camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+    placeDice();
+    overStale = true;
+    invalidate();
+  }
+  /** Where a point of the (unzoomed) view meets the frame's top, or the table beyond the frame: [x, z, y], in the scene. */
+  function groundAt(px, py) {
+    const u = base.cu + ((px / width) * 2 - 1) * base.hu, v = base.cv - ((py / height) * 2 - 1) * base.hv, s = Math.sin(elev), k = Math.cos(elev);
+    const o = camera.position, dy = v * k - s, dz = -v * s - k;          // the ray: u across, v up the screen, and forward
+    const meet = y => { const t = (y - o.y) / dy; return [o.x + u * t, o.z + dz * t]; };
+    const [fx, fz] = meet(0.085), c = Math.cos(yaw), n = Math.sin(yaw);
+    const inFrame = hexR([Math.abs(fx * c - fz * n), Math.abs(fx * n + fz * c)]) <= APO + RIM;   // judged in the island's own frame
+    const y = inFrame ? 0.085 : -0.22, [x, z] = inFrame ? [fx, fz] : meet(-0.22);
+    return [x, z, y + DIE / 2];
+  }
+  /** The dice's place: the view's bottom right corner, unless the land is there (then the corner with the most room), and the
+   *  corner they're in keeps them while the island turns, so they never jump about; they follow the screen, not the island,
+   *  since in 3D they are the only place the roll is shown. */
+  const CORNERS = [[0.92, 0.92], [0.08, 0.92], [0.92, 0.08], [0.08, 0.08]];
+  let corner = 0;
+  function placeDice() {
+    const c = Math.cos(yaw), n = Math.sin(yaw), land = LAND.map(([x, z, r]) => [x * c + z * n, -x * n + z * c, r]);
+    const clear = ([x, z]) => Math.min(...land.map(([a, b, r]) => Math.hypot(a - x, b - z) - r));
+    const room = CORNERS.map(([fx, fy], i) => clear(groundAt(fx * width, fy * height)) + (i === 0 ? 0.25 : 0) + (i === corner ? 0.5 : 0));
+    corner = room.indexOf(Math.max(...room));
+    const [fx, fy] = CORNERS[corner], ix = fx > 0.5 ? -1 : 1, iy = fy > 0.5 ? -1 : 1;
+    DICE_AT = [[fx + ix * 0.09, fy], [fx, fy + iy * 0.1]].map(([a, b]) => groundAt(a * width, b * height));
+    dice.forEach((d, k) => { if (d.visible && !d.userData.rolling) d.position.set(DICE_AT[k][0], DICE_AT[k][2], DICE_AT[k][1]); });
+  }
+  /** Sets the zoom and the move (in tangents), kept as shares of what the zoom allows so a turned phone keeps its place. */
+  function setZoomPan(z, pu, pv) {
+    z = clampZoom(z);
+    const mu = base.hu - base.hu / z, mv = base.hv - base.hv / z, share = (p, m) => (m > 1e-9 ? Math.max(-1, Math.min(1, p / m)) : 0);
+    arranged = { ...arranged, zoom: z, px: share(pu, mu), py: share(pv, mv) };
+    applyView();
+  }
+  /** Zooms by a factor about a point of the view (pixels), keeping the island's point under it there. */
+  function zoomAt(factor, px, py) {
+    const hu = base.hu / zoom, hv = base.hv / zoom;
+    const u = base.cu + panU + ((px / width) * 2 - 1) * hu, v = base.cv + panV - ((py / height) * 2 - 1) * hv;
+    const z = clampZoom(zoom * factor), hu2 = base.hu / z, hv2 = base.hv / z;
+    setZoomPan(z, u - base.cu - ((px / width) * 2 - 1) * hu2, v - base.cv + ((py / height) * 2 - 1) * hv2);
+  }
+  /** Moves the zoomed view by a drag (pixels). */
+  const panBy = (dx, dy) => setZoomPan(zoom, panU - (dx / width) * 2 * (base.hu / zoom), panV + (dy / height) * 2 * (base.hv / zoom));
+  // How far a finger's pixel turns the island and tilts the camera. Across is quicker than up and down, which has less to
+  // cover (30° to 88°); a bigger screen has bigger fingers' worth of pixels for the same movement, so it's divided by the scale.
+  const YAW_PER_PX = 0.55 * DEG, ELEV_PER_PX = 0.4 * DEG;
+  /** Turns the island by a drag of dx across and tilts the camera by dy down (down brings the camera higher, as pulling the
+   *  far edge of a board toward you does). True when the camera hit its lowest or highest. */
+  function turnBy(dx, dy) {
+    const k = 1 / pageScale(), now = arranged.turn || { yaw, elev };
+    const want = now.elev + dy * ELEV_PER_PX * k, got = clampElev(want);
+    arranged = { ...arranged, turn: { yaw: wrapYaw(now.yaw + dx * YAW_PER_PX * k), elev: got } };
+    applyView();
+    return got !== want;
+  }
+  function resize() {
+    const r = host.getBoundingClientRect();
+    width = Math.max(1, Math.round(r.width)); height = Math.max(1, Math.round(r.height));
+    renderer.setSize(width, height, false);
+    over.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    applyView();
+  }
+
+  // ---------- the hand on the island ----------
+  // One finger (or the mouse) drags to turn it: across to spin it, up and down to tilt the camera, and a flick coasts a
+  // moment. Two fingers pinch to zoom and move it; the wheel zooms where it points, and a mouse moves it with shift or the
+  // right button. A double tap on bare island puts the camera back. A tap that didn't move is still a tap on a ringed
+  // place; a drag or a pinch never is.
+  const ac = new AbortController();                                        // takes the listeners off the box when the island goes
+  const on = (type, fn, opts = {}) => host.addEventListener(type, fn, { ...opts, signal: ac.signal });
+  const touches = new Map();                                               // each finger: where it went down, where it is
+  let pinch = null, pinchQueued = false, orbit = null, dragged = false, locked = false, lastTap = null, drift = null, wheelTimer = 0;
+  const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const keep = () => onView(encode(arranged));                              // the camera as the player left it, for this device
+  const capture = id => { try { host.setPointerCapture(id); } catch { /* the pointer is gone */ } };   // so a repaint under a finger doesn't lose it
+  on("pointerdown", e => {
+    if (touches.size >= 2) return;
+    touches.set(e.pointerId, { from: [e.clientX, e.clientY], at: [e.clientX, e.clientY], spot: !!e.target.closest?.("[data-v],[data-e],[data-h]"), mouse: e.pointerType === "mouse", button: e.button, shift: e.shiftKey });
+    if (touches.size === 1) {
+      dragged = false; locked = false; orbit = null;
+      if (drift) { drift = null; dragged = true; }                         // a touch stops a coast, and isn't a tap on what slid under it
+    } else {
+      const [a, b] = [...touches.values()].map(t => t.at);
+      pinch = { gap: Math.hypot(a[0] - b[0], a[1] - b[1]), mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] };
+      orbit = null; dragged = true; drift = null;
+      for (const id of touches.keys()) capture(id);
+    }
+  });
+  on("pointermove", e => {
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+    const last = t.at;
+    t.at = [e.clientX, e.clientY];
+    if (locked) return;
+    if (touches.size === 2 && pinch) {
+      // the two fingers' moves arrive as two events: the step is taken once a frame, from where both are then, or a pair
+      // of fingers moving together would read as a squeeze (and at the greatest zoom, which can't be squeezed back, lose it)
+      if (!pinchQueued) { pinchQueued = true; go(() => { pinchQueued = false; if (pinch) pinchStep(); return false; }); }
+    } else if (touches.size === 1) {
+      if (!orbit && Math.hypot(t.at[0] - t.from[0], t.at[1] - t.from[1]) > (t.mouse ? 4 : 8)) {     // moved: a drag, no longer a tap
+        orbit = { move: t.mouse && (t.shift || t.button > 0), vx: 0, vy: 0, t: performance.now() };
+        dragged = true;
+        capture(e.pointerId);
+        host.classList.add("orbiting");
+      }
+      if (!orbit) return;
+      const dx = t.at[0] - last[0], dy = t.at[1] - last[1], now = performance.now(), dt = Math.max(1, now - orbit.t);
+      orbit.t = now;
+      if (orbit.move) { panBy(dx, dy); return; }
+      orbit.vx = orbit.vx * 0.5 + (dx / dt) * 0.5;
+      orbit.vy = orbit.vy * 0.5 + (dy / dt) * 0.5;
+      if (turnBy(dx, dy)) orbit.vy = 0;
+    }
+  });
+  function pinchStep() {
+    const r = host.getBoundingClientRect(), [a, b] = [...touches.values()].map(x => x.at);
+    const gap = Math.hypot(a[0] - b[0], a[1] - b[1]), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    panBy(mid[0] - pinch.mid[0], mid[1] - pinch.mid[1]);
+    if (pinch.gap > 10) zoomAt(gap / pinch.gap, mid[0] - r.left, mid[1] - r.top);
+    pinch = { gap, mid };
+  }
+  /** A flick carries on, slowing, until it is nearly still (no loop runs once it is). */
+  function coast(vx, vy) {
+    const start = flick(vx, vy);
+    if (calm() || !start) return;
+    const me = drift = { ...start };
+    let last = performance.now();
+    go(t => {
+      if (drift !== me) return false;                                      // a touch, a zoom or a reset took over
+      const step = coasted(me, t - last);
+      last = t;
+      const hit = turnBy(step.dx, step.dy);                                // the camera met its lowest or highest: no more of that
+      me.vx = step.vx; me.vy = hit ? 0 : step.vy;
+      if (!step.done) return true;
+      drift = null; keep();
+      return false;
+    });
+  }
+  /** The fitted camera again: it glides back from wherever the player took it (the shortest way round). */
+  function resetView() {
+    if (isFitted(arranged)) return;
+    const to = viewIn(FITTED, OUTLINE, width, height), from = { yaw, elev, zoom, px: arranged.px, py: arranged.py };
+    const me = drift = {}, dYaw = wrapYaw(to.yaw - yaw), t0 = performance.now(), T = calm() ? 0 : 360;
+    go(t => {
+      if (drift !== me) return false;
+      const u = T ? ease(clamp01((t - t0) / T)) : 1;
+      arranged = u >= 1 ? { ...FITTED } : { turn: { yaw: wrapYaw(from.yaw + dYaw * u), elev: from.elev + (to.elev - from.elev) * u }, zoom: from.zoom + (1 - from.zoom) * u, px: from.px * (1 - u), py: from.py * (1 - u) };
+      applyView();
+      if (u < 1) return true;
+      drift = null; keep();
+      return false;
+    });
+  }
+  function release(e, cancelled) {
+    const t = touches.get(e.pointerId);
+    if (!t) return;
+    touches.delete(e.pointerId);
+    if (touches.size) { if (pinch) { pinch = null; locked = true; } return; }   // one finger left of a pinch: it waits to lift
+    const was = orbit;
+    pinch = null; orbit = null; locked = false;
+    host.classList.remove("orbiting");
+    if (was) { if (!cancelled && !was.move && performance.now() - was.t < 100) coast(was.vx, was.vy); keep(); return; }
+    if (dragged || cancelled) { keep(); return; }
+    const now = performance.now(), [x, y] = t.at;                          // a tap: two on bare island, close together, are a double tap
+    if (!t.spot && lastTap && now - lastTap.t < 320 && Math.hypot(x - lastTap.x, y - lastTap.y) < 32) { lastTap = null; resetView(); }
+    else lastTap = t.spot ? null : { t: now, x, y };
+  }
+  on("pointerup", e => release(e, false));
+  on("pointercancel", e => release(e, true));
+  on("contextmenu", e => e.preventDefault());                              // the right button moves a zoomed island with a mouse
+  // a drag or a pinch is not a tap on what lay under it
+  on("click", e => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, { capture: true });
+  on("wheel", e => {
+    e.preventDefault();
+    drift = null;
+    const r = host.getBoundingClientRect();
+    zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(keep, 300);
+  }, { passive: false });
+
+  /** A point of the island (x, y up, z) on the view, in pixels from the top left. */
+  function project(x, y, z) {
+    V.set(x, y, z).applyMatrix4(world.matrixWorld).project(camera);
+    return [((V.x + 1) / 2) * width, ((1 - V.y) / 2) * height];
+  }
+  /** Pixels a unit spans across the screen at a point, whichever way the island is turned. */
+  const scaleAt = (x, y, z) => {
+    const c = Math.cos(yaw) * 0.5, n = Math.sin(yaw) * 0.5, a = project(x - c, y, z - n), b = project(x + c, y, z + n);
+    return Math.hypot(b[0] - a[0], b[1] - a[1]);
+  };
+
+  // ---------- drawing, only while something moves ----------
+  let frameId = 0, dead = false;
+  const anims = [];
+  function invalidate() { if (!frameId && !dead) frameId = requestAnimationFrame(frame); }
+  function go(fn) { anims.push(fn); invalidate(); }
+  function frame() {
+    frameId = 0;
+    const t = performance.now();
+    for (let i = anims.length - 1; i >= 0; i--) if (!anims[i](t)) anims.splice(i, 1);
+    if (overStale) paintOver();                                            // the camera moved: the numbers and rings go with it, once a frame
+    renderer.render(scene, camera);
+    if (anims.length) invalidate();
+  }
+  const ease = u => u * u * (3 - 2 * u), clamp01 = u => Math.max(0, Math.min(1, u));
+  /** A piece just put down drops onto the island with a little bounce. */
+  function dropIn(obj, delay = 0) {
+    const y0 = obj.position.y, t0 = performance.now() + delay;
+    obj.position.y = y0 + 0.7;
+    go(t => {
+      const e = t - t0;
+      if (e < 0) return true;
+      const fall = 200, u = clamp01(e / fall);
+      obj.position.y = e < fall ? y0 + 0.7 * (1 - u * u) : y0 + 0.04 * Math.sin(Math.PI * clamp01((e - fall) / 120));
+      if (e >= fall + 120) { obj.position.y = y0; return false; }
+      return true;
+    });
+  }
+
+  // ---------- the roll ----------
+  let rolled = "";
+  /** Both dice roll in from the far side of their corner and settle showing a and b. */
+  function roll(a, b, animate) {
+    const lie = [(a * 37 + b * 11) % 7 * 0.4 - 1.2, (b * 29 + a * 5) % 7 * 0.4 - 1.2];
+    [a, b].forEach((value, k) => {
+      const d = dice[k], end = showing(value, lie[k]);
+      d.visible = true;
+      if (!animate) { d.position.set(DICE_AT[k][0], DICE_AT[k][2], DICE_AT[k][1]); d.quaternion.copy(end); return; }
+      const t0 = performance.now() + k * 70, axis = new THREE.Vector3(Math.random() - 0.5, 0.3, Math.random() - 0.5).normalize();
+      const turns = (2.5 + Math.random() * 1.5) * Math.PI * 2, T = 950, whirl = new THREE.Quaternion();
+      d.userData.rolling = true;
+      go(t => {
+        const [x, z, rest] = DICE_AT[k], from = [x - 1.6 - k * 0.3, z - 1.5 + k * 0.4];   // the place now: the camera may be turning
+        const u = clamp01((t - t0) / T), out = 1 - (1 - u) ** 3;
+        d.position.set(from[0] + (x - from[0]) * out, rest + 1.3 * Math.abs(Math.cos(u * Math.PI * 2.6)) * (1 - u) ** 2.2, from[1] + (z - from[1]) * out);
+        whirl.setFromAxisAngle(axis, turns * (1 - u) ** 2);
+        d.quaternion.copy(whirl).multiply(end);
+        if (u >= 1) d.userData.rolling = false;
+        return u < 1;
+      });
+    });
+  }
+
+  // ---------- setting the island ----------
+  let prev = null, show = {}, cur = null;
+  /**
+   * The island as the state has it: s (the game state: kind, num, ports, vo, vl, eo, robber, roll, rolled, turnNo), show
+   * ({ v, e, h }: Sets of the corners, edges and hexes a tap may go to; mark: [kind, index] of the last move).
+   */
+  function set(s, shown = {}) {
+    cur = s; show = shown;
+    buildLand(s);
+    const first = !prev || prev.kind.join() !== s.kind.join();
+    // roads
+    EDGES.forEach((e, i) => {
+      const o = s.eo[i];
+      let m = roadMesh.get(i);
+      if (!o) { if (m) { pieces.remove(m); roadMesh.delete(i); } return; }
+      if (!m) {
+        m = new THREE.Mesh(ROAD(), seatMats[o - 1]);
+        const A = VERTS[e.a], B = VERTS[e.b];
+        m.position.set(e.x, TOP, e.y);
+        m.rotation.y = -Math.atan2(B.y - A.y, B.x - A.x);
+        m.castShadow = true; m.receiveShadow = true;
+        pieces.add(m); roadMesh.set(i, m);
+        if (!first) dropIn(m);
+      }
+      m.material = seatMats[o - 1];
+    });
+    // posts and factories
+    VERTS.forEach((v, i) => {
+      const o = s.vo[i], size = s.vl[i];
+      let m = houseMesh.get(i);
+      if (m && (!o || m.userData.size !== size)) { pieces.remove(m); houseMesh.delete(i); m = null; }
+      if (!o) return;
+      if (!m) {
+        m = new THREE.Mesh(size === 2 ? FACTORY() : POST(), seatMats[o - 1]);
+        m.userData.size = size;
+        m.position.set(v.x, TOP, v.y);
+        m.rotation.y = ((i * 47) % 9 - 4) * 4 * DEG + (size === 2 ? 0.2 : 0);
+        m.castShadow = true; m.receiveShadow = true;
+        pieces.add(m); houseMesh.set(i, m);
+        if (!first) dropIn(m);
+      }
+      m.material = seatMats[o - 1];
+    });
+    // the blockade: it sails to its new hex
+    const to = HEXES[s.robber], ty = TOP + 0.045;
+    if (!prev || prev.robber === s.robber || first) ship.position.set(to.x + 0.02, ty, to.y + 0.05);
+    else {
+      const from = ship.position.clone(), t0 = performance.now(), T = 700;
+      go(t => {
+        const u = clamp01((t - t0) / T), k = ease(u);
+        ship.position.set(from.x + (to.x + 0.02 - from.x) * k, ty + 0.5 * Math.sin(Math.PI * u), from.z + (to.y + 0.05 - from.z) * k);
+        ship.rotation.z = Math.sin(u * Math.PI * 3) * 0.12 * (1 - u);
+        return u < 1;
+      });
+    }
+    // the dice: a new roll rolls them, once
+    const key = s.rolled && s.roll?.[0] ? `${s.turnNo}:${s.roll.join("")}` : "";
+    if (!s.roll?.[0]) dice.forEach(d => { d.visible = false; });
+    else if (key && key !== rolled) roll(s.roll[0], s.roll[1], !!rolled || (prev && !first));
+    else if (!dice[0].visible) roll(s.roll[0], s.roll[1], false);
+    if (key) rolled = key;
+    prev = { kind: [...s.kind], robber: s.robber };
+    paintOver();
+    invalidate();
+  }
+
+  // ---------- what's laid over the canvas: numbers, rates, the last move, where a tap may go ----------
+  const f = n => Math.round(n * 10) / 10;
+  const poly = pts => pts.map(p => `${f(p[0])},${f(p[1])}`).join(" ");
+  function paintOver() {
+    overStale = false;
+    if (!cur) return;
+    const s = cur, out = [], ty = TOP + 0.05;
+    const lie = 0.6 + 0.4 * Math.sin(elev);                                // the token is a flatter oval from low down: its number is set a little smaller, and the pips closer
+    HEXES.forEach((h, i) => {
+      const n = s.num[i];
+      if (!n) return;
+      const [x, y] = project(h.x, ty, h.y), k = scaleAt(h.x, ty, h.y), hot = n === 6 || n === 8, p = pips(n), dim = s.robber === i;
+      out.push(`<g class="fc-num${hot ? " hot" : ""}${dim ? " dim" : ""}"><text x="${f(x)}" y="${f(y - k * 0.03 * lie)}" font-size="${f(k * 0.3 * lie)}" text-anchor="middle" dominant-baseline="central">${n}</text>${
+        Array.from({ length: p }, (_, j) => `<circle cx="${f(x + (j - (p - 1) / 2) * k * 0.062)}" cy="${f(y + k * 0.15 * lie)}" r="${f(k * 0.021)}"/>`).join("")}</g>`);
+    });
+    PORT_AT.forEach((_, i) => {
+      const [px, pz] = portPos(i), [x, y] = project(px, SEA + 0.1, pz), k = scaleAt(px, SEA + 0.1, pz);
+      out.push(`<text class="fc-prate" x="${f(x)}" y="${f(y)}" font-size="${f(k * 0.24)}" text-anchor="middle" dominant-baseline="central">${s.ports[i] === "any" ? "3:1" : "2:1"}</text>`);
+    });
+    const ring = (cx, cz, r, n = 20, y = TOP + 0.01) => Array.from({ length: n }, (_, j) => { const a = (j / n) * Math.PI * 2; return project(cx + Math.cos(a) * r, y, cz + Math.sin(a) * r); });
+    const hexAt = i => HEXES[i].corners.map(v => project(VERTS[v].x, TOP + 0.01, VERTS[v].y));
+    if (show.mark?.length) {
+      const [kind, i] = show.mark, p = kind === "v" ? VERTS[i] : kind === "e" ? EDGES[i] : HEXES[i];
+      out.push(`<polygon class="fc-last" points="${poly(ring(p.x, p.y, kind === "h" ? 0.62 : 0.32))}" style="stroke-width:${f(scaleAt(p.x, TOP, p.y) * 0.05)}px;stroke-dasharray:${f(scaleAt(p.x, TOP, p.y) * 0.1)}px"/>`);
+    }
+    for (const i of show.h || []) out.push(`<polygon class="fc-spot h" data-h="${i}" points="${poly(hexAt(i))}" style="stroke-width:${f(scaleAt(HEXES[i].x, TOP, HEXES[i].y) * 0.07)}px"/>`);
+    // roads and corners ringed together (tap to build): the corner's target shrinks and the road's strip stops short of it, so no two targets overlap
+    const count = x => x?.size ?? x?.length ?? 0, mixed = count(show.e) > 0 && count(show.v) > 0, cut = mixed ? 0.3 : 0;
+    for (const i of show.e || []) {
+      // the target is a strip of the table along the edge, as the camera sees it, so at a low angle a road's neighbours are still its own
+      const e = EDGES[i], a = VERTS[e.a], b = VERTS[e.b], A = project(a.x, TOP + 0.04, a.y), B = project(b.x, TOP + 0.04, b.y), k = scaleAt(e.x, TOP, e.y);
+      const nx = (b.y - a.y) * 0.24, nz = -(b.x - a.x) * 0.24, at = (t, m) => project(a.x + (b.x - a.x) * t + nx * m, TOP + 0.04, a.y + (b.y - a.y) * t + nz * m);
+      out.push(`<g class="fc-spot e" data-e="${i}"><line class="ring" x1="${f(A[0])}" y1="${f(A[1])}" x2="${f(B[0])}" y2="${f(B[1])}" style="stroke-width:${f(k * 0.15)}px"/><polygon class="hit pad" points="${poly([at(cut, 1), at(1 - cut, 1), at(1 - cut, -1), at(cut, -1)])}"/></g>`);
+    }
+    for (const i of show.v || []) {
+      const v = VERTS[i], [x, y] = project(v.x, TOP + 0.04, v.y), k = scaleAt(v.x, TOP, v.y);
+      out.push(`<g class="fc-spot v" data-v="${i}"><circle class="ring" cx="${f(x)}" cy="${f(y)}" r="${f(k * 0.2)}" style="stroke-width:${f(k * 0.04)}px"/><polygon class="hit" points="${poly(ring(v.x, v.y, mixed ? 0.3 : 0.47, 14, TOP + 0.04))}"/></g>`);
+    }
+    over.innerHTML = out.join("");
+  }
+
+  const ro = new ResizeObserver(resize);
+  ro.observe(host);
+  const mo = new MutationObserver(applySkin);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-mode"] });
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener?.("change", applySkin);
+  canvas.addEventListener("webglcontextlost", e => e.preventDefault());
+  canvas.addEventListener("webglcontextrestored", invalidate);
+  applySkin();
+  resize();
+
+  return {
+    set, project, redraw: invalidate,
+    /** Puts the camera back to the fitted one (the menu's Reset view). */
+    resetView,
+    /** The camera in force, for tests: the island's turn and the camera's height (radians), the zoom, and what the player has set. */
+    get camera() { return { yaw, elev, zoom, arranged: { ...arranged }, size: [width, height] }; },
+    get busy() { return anims.length > 0; },
+    /** The number on top of each die, read from how it lies (for tests: it should be the roll). */
+    get diceUp() { return dice.map(d => (d.visible ? FACES.reduce((b, [n, v]) => { const y = n.clone().applyQuaternion(d.quaternion).y; return y > b[0] ? [y, v] : b; }, [-2, 0])[1] : 0)); },
+    /** Lets go of the GPU and the page's observers, and empties the box (the flat island takes it over). */
+    dispose() {
+      dead = true;
+      cancelAnimationFrame(frameId);
+      clearTimeout(wheelTimer);
+      ac.abort();
+      host.classList.remove("orbiting");
+      ro.disconnect(); mo.disconnect(); mq.removeEventListener?.("change", applySkin);
+      scene.traverse(o => { if (o.geometry && o.userData.own) o.geometry.dispose(); });
+      renderer.dispose();
+      renderer.forceContextLoss?.();
+      host.replaceChildren();
+    },
+  };
+}

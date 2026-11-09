@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Orrery</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="orrery.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="orrery full fit-screen beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon or-mark" aria-hidden="true"></span>Orrery</button></h1>
+    <div class="top-right"><button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button></div>
+  </header>
+
+  <div class="or-strip full-pull">
+    <span class="or-score">Score <b id="score">0</b></span>
+    <span id="combo" class="or-combo" aria-live="polite"></span>
+    <span class="or-room">Room <b id="room">0</b></span>
+    <span class="or-best">Best <b id="best">0</b></span>
+  </div>
+  <section id="sky" class="or-sky fit-grow fit-box" aria-label="The orrery">
+    <div id="stage" class="or-stage">
+      <svg id="over" class="or-over" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+    </div>
+  </section>
+
+  <section class="or-side">
+    <div id="controls" class="or-controls">
+      <div class="or-beat">
+        <div id="tempoBox" class="or-tempo" role="group" aria-label="Tempo">
+          <button class="or-nudge" type="button" id="slowerBtn" aria-label="Slower">−</button>
+          <button class="or-metro" type="button" id="metroBtn" aria-label="Strike the next beat now" title="Tap: the next beat now"><svg viewBox="0 0 20 24" aria-hidden="true"><path class="or-metro-case" d="M6.6 2.2H13.4L17.6 21.8H2.4Z"/><path class="or-metro-scale" d="M10 5.5V15"/><g class="or-metro-arm"><path d="M10 19.6V3.6"/><rect x="8.2" y="7" width="3.6" height="2.8" rx=".6"/></g><path class="or-metro-foot" d="M1.6 21.8H18.4"/></svg><b id="tempo">12.0</b></button>
+          <button class="or-nudge" type="button" id="fasterBtn" aria-label="Faster">+</button>
+        </div>
+      </div>
+      <p id="line" class="or-line" aria-live="polite"></p>
+      <div id="spinPad" class="or-pad or-spins" role="group" aria-label="Set the chosen hoop's speed, or every hoop's"></div>
+      <div id="colourPad" class="or-pad or-colours" role="group" aria-label="Tip the chosen hoop, or every hoop, into a colour's plane"></div>
+    </div>
+    <div id="result" class="or-result" hidden>
+      <p id="verdict" class="or-verdict"></p>
+      <button class="or-go" type="button" id="againBtn">New game</button>
+    </div>
+  </section>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<script type="module" src="orrery.js"></script>
+</body>
+</html>

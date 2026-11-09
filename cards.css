@@ -1,0 +1,44 @@
+/* The playing cards of cards.js: ivory, rank and suit in the corner, the suit large at the foot, red for hearts and
+   diamonds; a joker lettered down its corner. 2.5em by 3.5em: the card's size is its font size (--cd-size, or the
+   font size of what it sits in). */
+:root { --cd-face: #FCF9F1; --cd-edge: #C9B78E; --cd-red: #B3302A; --cd-black: #1E2730; --cd-back: #2F4A66; --cd-back-line: #C8923A; --cd-rim: #D6C9A6; --cd-gilt: #B98B35; }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) { --cd-face: #ECE6D6; --cd-edge: #7E6C4B; --cd-back: #23384E; --cd-rim: #6E5E40; --cd-gilt: #C99A45; } }
+html[data-mode="night"] { --cd-face: #ECE6D6; --cd-edge: #7E6C4B; --cd-back: #23384E; --cd-rim: #6E5E40; --cd-gilt: #C99A45; }
+html[data-theme="office"] { --cd-face: #FFFFFF; --cd-edge: #C8C6C4; --cd-red: #C50F1F; --cd-black: #242424; --cd-back: #0F6CBD; --cd-back-line: #FFFFFF; --cd-rim: #B8B6B4; --cd-gilt: #8A8886; }
+
+:root { --cd-paper: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' seed='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35  0 0 0 0 .28  0 0 0 0 .16  0 0 0 .45 -.17'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.cd { --cd-thick: 0 .05em 0 var(--cd-rim), 0 .09em .1em -.01em rgba(28, 42, 52, .3), 0 .02em .05em rgba(28, 42, 52, .22);
+  position: relative; box-sizing: border-box; display: inline-flex; flex-direction: column; align-items: flex-start; flex: none;
+  width: 2.5em; height: 3.5em; padding: .14em .18em; border-radius: .2em; border: 1px solid var(--cd-edge);
+  background: var(--cd-paper) 0 0 / 3.6em 3.6em, linear-gradient(162deg, #FFF 0, var(--cd-face) 34%, color-mix(in srgb, var(--cd-face) 88%, #A8935F) 100%);
+  background-color: var(--cd-face);
+  color: var(--cd-black); font-weight: 800; line-height: 1; box-shadow: var(--cd-thick), inset 0 0 0 .05em rgba(255, 255, 255, .55); -webkit-user-select: none; user-select: none; overflow: hidden; }
+.cd.red { color: var(--cd-red); }
+.cd-r { font-size: .95em; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.cd-s { font-size: .82em; margin-top: .04em; }
+.cd-pip { position: absolute; right: .14em; bottom: .08em; font-size: 1.45em; line-height: 1; opacity: .9; }
+/* a joker: JOKER down its corner (a rank's place, so a fanned hand shows it), a star at its foot; the big joker red */
+.cd.joker { padding: .2em .12em; }
+.cd.joker.big { color: var(--cd-red); }
+.cd-j { writing-mode: vertical-rl; text-orientation: upright; font-size: .46em; letter-spacing: -.2em; line-height: 1; }
+.cd.joker .cd-pip { font-size: 1.3em; opacity: 1; }
+.cd.back { background: var(--cd-face); border-color: var(--cd-edge); }
+/* the back: a cream margin round a navy panel (::before), the panel engraved in gilt (::after): a lattice behind a rosette in a double frame */
+.cd.back::before { content: ""; position: absolute; inset: .13em; border-radius: .11em; box-shadow: inset 0 0 0 .03em color-mix(in srgb, var(--cd-back-line) 80%, transparent), inset 0 .12em .3em rgba(0, 0, 0, .35);
+  background: radial-gradient(ellipse 90% 70% at 32% 22%, color-mix(in srgb, var(--cd-back) 78%, #FFF), var(--cd-back) 58%, color-mix(in srgb, var(--cd-back) 78%, #000)); }
+/* Korbi, 7 Nov 2026: a detailed back in the app's theme, a brass compass rose on an engraved lattice (cardback.svg, one colour, used as the mask for --cd-back-line). */
+.cd.back::after { content: ""; position: absolute; inset: .13em; background: var(--cd-back-line); opacity: .9; -webkit-mask: url("./cardback.svg") center / 100% 100% no-repeat; mask: url("./cardback.svg") center / 100% 100% no-repeat; }
+.cd.dim { opacity: .4; }
+.cd.lit { box-shadow: 0 0 0 2px var(--brass), var(--cd-thick); }
+/* a row of cards overlapping, as cards.js's fitRow sets them out */
+.cd-row { display: flex; align-items: flex-end; font-size: var(--cd-size, 1rem); }
+.cd-row > .cd + .cd { margin-left: calc(var(--cd-step, 1.6em) - 2.5em); }
+/* cards in a line of words, or a play on the table */
+.cd-line { display: inline-flex; font-size: var(--cd-line, .62rem); vertical-align: middle; }
+.cd-line > .cd + .cd { margin-left: -1.2em; }
+
+/* courts: the figure of court-art.js (a double-ended king, queen or jack in vector art) in the face's middle, clear of the corner index */
+.cd.court .cd-pip { display: none; }
+.cd-ct { position: absolute; left: .82em; right: .07em; top: .16em; bottom: .16em; display: block; }
+.cd-ct .court-art { display: block; width: 100%; height: 100%; }
+.cd-ct .court-art { object-fit: contain; }

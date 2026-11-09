@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Punt</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="dropdown.css">
+<link rel="stylesheet" href="duel.css">
+<link rel="stylesheet" href="punt.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="punt full titled fit-screen beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon pt-mark" aria-hidden="true"></span>Punt</button></h1>
+    <div class="top-right">
+      <select id="level" class="pool" aria-label="Difficulty" data-accent="pt">
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+        <option value="maths">Maths</option>
+        <option value="refining">Refining</option>
+        <option value="reasoning">Reasoning</option>
+        <option value="words">Words</option>
+        <option value="cities">Cities</option>
+        <option value="flags">Flags</option>
+        <option value="patterns">Patterns</option>
+        <option value="wine">Wine</option>
+        <option value="art">Art</option>
+        <option value="economics">Economics</option>
+        <option value="physics">Physics</option>
+        <option value="chemistry">Chemistry</option>
+        <option value="code">Code</option>
+        <option value="philosophy">Philosophy</option>
+        <option value="religion">Religion</option>
+      </select>
+      <button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button>
+    </div>
+  </header>
+
+  <p id="partner" class="pt-partner" hidden></p>
+  <div id="mathsBar" class="pt-maths" hidden>
+    <button class="pick" type="button" id="stagesBtn" aria-haspopup="dialog"></button>
+    <button class="pick" type="button" id="diffsBtn" aria-haspopup="dialog"></button>
+  </div>
+
+  <div class="pt-ledger">
+    <span id="progress" class="pt-progress"></span>
+    <span class="pt-pot"><span class="pt-pot-label">Purse</span> <b id="pot"></b></span>
+  </div>
+  <p id="avg" class="pt-avg" hidden></p>
+
+  <section id="slip" class="pt-slip fit-grow" aria-live="polite">
+    <div class="pt-slip-body fit-scroll" id="slipBody">
+    <p id="ask" class="pt-ask"></p>
+    <p id="prompt" class="pt-prompt"></p>
+    <div id="figure" class="pt-figure" hidden></div>
+    <div id="picture" class="pt-picture" hidden></div>
+    <pre id="code" class="pt-code" hidden></pre>
+    <p id="need" class="pt-need" hidden></p>
+    <div id="options" class="pt-options" role="radiogroup" aria-label="Your pick"></div>
+    </div>
+  </section>
+
+  <div id="betting" class="pt-betting">
+    <input id="stake" type="range" min="0" max="100" step="1" value="0" aria-label="Commitment, as a share of your purse">
+    <div id="chips" class="pt-chips"></div>
+    <div class="pt-buttons">
+      <button id="passBtn" class="btn">Hold</button>
+      <button id="betBtn" class="btn primary">Commit</button>
+    </div>
+  </div>
+
+  <div id="result" class="pt-result" hidden>
+    <p id="verdict" class="pt-verdict"></p>
+    <div class="pt-reveal fit-scroll">
+      <div id="standings" class="pt-standings" hidden></div>
+      <ul id="notes" class="pt-notes"></ul>
+    </div>
+    <button id="flagBtn" class="pt-flag" type="button">Disagree with this answer? Flag it</button>
+    <button id="nextBtn" class="btn primary wide">Next question</button>
+  </div>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<dialog id="doneDlg" class="sheet" aria-label="Session finished">
+  <div class="pick-head"><h2 id="doneTitle"></h2><button class="btn" type="button" id="doneClose">Close</button></div>
+  <dl id="doneStats" class="pt-stats"></dl>
+  <div id="doneTable" class="pt-standings" hidden></div>
+  <p id="doneNote" class="stats"></p>
+  <button class="btn wide" type="button" id="doneStatsBtn">Your stats</button>
+  <button class="btn primary wide" type="button" id="doneNew">New session</button>
+  <button class="link pt-done-solo" type="button" id="doneSolo" hidden>Back to solo</button>
+</dialog>
+
+<dialog id="flagDlg" class="sheet" aria-label="Flag this question">
+  <div class="pick-head"><h2>Flag this question</h2><button class="btn" type="button" id="flagClose">Close</button></div>
+  <p id="flagWhat" class="stats"></p>
+  <div id="flagReasons" class="pt-reasons" role="radiogroup" aria-label="What's wrong"></div>
+  <label class="pt-note-label" for="flagNote">Anything to add (optional)</label>
+  <textarea id="flagNote" class="pt-note" rows="3" maxlength="400" placeholder="Say, Bolivia is in the lithium triangle too"></textarea>
+  <button class="btn primary wide" type="button" id="flagSend" disabled>Flag it</button>
+  <p class="stats">It's kept on this device and sent as soon as there's a connection, so it works offline.</p>
+</dialog>
+
+<dialog id="flagsDlg" class="sheet" aria-label="Flagged questions">
+  <div class="pick-head"><h2>Flagged questions</h2><button class="btn" type="button" id="flagsClose">Close</button></div>
+  <div id="flagsBody"></div>
+</dialog>
+
+<dialog id="statsDlg" class="sheet" aria-label="Your stats">
+  <div class="pick-head"><h2>Your stats</h2><button class="btn" type="button" id="statsClose">Close</button></div>
+  <div id="statsBody"></div>
+</dialog>
+
+<dialog id="mathsDlg" class="sheet" aria-label="Maths questions">
+  <div class="pick-head"><h2 id="mathsTitle">Questions</h2><button class="btn" type="button" id="mathsClose">Close</button></div>
+  <h3>Stages</h3>
+  <div id="stagePicks" class="pt-chips"></div>
+  <h3>Difficulty</h3>
+  <p class="stats" id="mathsNote"></p>
+  <div id="diffPicks" class="pt-chips pt-chips-10"></div>
+  <p id="mathsCount" class="stats"></p>
+  <button class="btn primary wide" type="button" id="mathsGo">Start a run with these</button>
+</dialog>
+
+<dialog id="nameDlg" class="sheet" aria-label="Your name">
+  <form method="dialog" id="nameForm">
+    <label for="nameInput">Your name, so the others know who's playing</label>
+    <input id="nameInput" maxlength="16" autocomplete="nickname" required>
+    <button class="btn primary wide" type="submit">Continue</button>
+  </form>
+</dialog>
+
+<p id="toast" class="pt-toast" role="status" aria-live="polite"></p>
+<script src="bank.js"></script>
+<script type="module" src="punt.js"></script>
+<script type="module" src="sfx.js"></script>
+</body>
+</html>

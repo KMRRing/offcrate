@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E8DFC9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10181F" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Codex">
+<title>Slipway</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="theme.js"></script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="slipway.css">
+<link rel="stylesheet" href="themes.css">
+</head>
+<body>
+<div id="app" class="slipway full titled fit-screen beside">
+  <header class="top">
+    <h1 class="mark"><button id="appsBtn" class="mark-btn" aria-haspopup="dialog">
+      <span class="mark-icon sw-mark" aria-hidden="true"></span>Slipway</button></h1>
+    <div class="top-right"><button id="menuBtn" class="pick" aria-haspopup="dialog">Menu</button></div>
+  </header>
+
+  <div class="sw-strip full-pull"><span id="where"></span><span id="clock" class="sw-clock"></span></div>
+  <section id="rules" class="sw-rules fit-scroll" aria-label="The cut list"></section>
+  <section id="bench" class="sw-bench fit-grow" aria-label="The timber">
+    <canvas id="cube" class="sw-cube" aria-label="The timber; drag to turn it, tap a face to cut"></canvas>
+    <div id="layerView" class="sw-lv" hidden>
+      <div id="tabs" class="sw-tabs" role="tablist" aria-label="Layer, lowest first"></div>
+      <div class="sw-gridbox fit-box"><div id="grid" class="sw-grid"></div></div>
+    </div>
+  </section>
+  <div class="sw-tools" role="group" aria-label="Tools">
+    <button class="btn sw-tool on" type="button" data-tool="chisel" title="One cube">Chisel</button>
+    <button class="btn sw-tool" type="button" data-tool="saw" title="A whole layer">Saw</button>
+    <button class="btn sw-tool" type="button" data-tool="bore" title="A whole line">Bore</button>
+    <button class="btn" type="button" id="viewBtn">Layers</button>
+  </div>
+  <div class="sw-bar">
+    <button class="btn" type="button" id="hintBtn">Hint</button>
+    <button class="btn" type="button" id="undoBtn">Undo</button>
+  </div>
+</div>
+
+<dialog id="menuDlg" class="sheet" aria-label="Menu">
+  <div class="pick-head"><h2>Menu</h2><button class="btn" type="button" id="menuClose">Close</button></div>
+  <div id="menuBody"></div>
+</dialog>
+
+<dialog id="doneDlg" class="sheet" aria-labelledby="doneHead">
+  <div class="pick-head"><h2 id="doneHead">Cut</h2><button class="btn" type="button" id="doneClose">Close</button></div>
+  <canvas id="doneView" class="sw-doneview" aria-label="The piece you cut"></canvas>
+  <div id="doneBody"></div>
+</dialog>
+
+<p id="toast" class="sw-toast" role="status" aria-live="polite"></p>
+<script type="module" src="slipway.js"></script>
+</body>
+</html>

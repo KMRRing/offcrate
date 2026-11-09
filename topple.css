@@ -1,0 +1,255 @@
+/* Topple: the table (sixty-one hexagons inlaid in birch, in a mahogany frame, drawn by topple-3d.js on a canvas), what's
+   drawn over it (rings, the two arrows of a push, scores, the chosen domino's brass handle), the dominoes standing on it
+   in three enamels (Classic) or nine and the rainbow (the levels), each colour with pips of its own so they're told apart
+   without their colour, and under it the three pieces to drag. The knock's ochre is the house colour. */
+:root {
+  --tp-in: var(--c0);
+  --tp-soft: color-mix(in srgb, var(--tp-in) 15%, var(--sheet));
+  /* a level's nine colours (the rainbow is drawn by the page's gradient), and the ink of the pips on the light ones */
+  --tp-yellow: #E0AE2A; --tp-red: #A8382B; --tp-blue: #2C5B8A; --tp-black: #24272C; --tp-white: #F3F0E8; --tp-orange: #CC6A22; --tp-green: #2F7D5B; --tp-purple: #6B4C8A; --tp-grey: #8A8F95; --tp-rainbow: #D9A34A;
+  --tp-ink-dark: #1C2A34;
+}
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) { --tp-yellow: #E2B544; --tp-red: #D06A58; --tp-blue: #4A7FB8; --tp-black: #3A3E45; --tp-white: #D8D2C4; --tp-orange: #E08440; --tp-green: #4E9E7C; --tp-purple: #8E70B3; --tp-grey: #A3A8AE; } }
+html[data-mode="night"] { --tp-yellow: #E2B544; --tp-red: #D06A58; --tp-blue: #4A7FB8; --tp-black: #3A3E45; --tp-white: #D8D2C4; --tp-orange: #E08440; --tp-green: #4E9E7C; --tp-purple: #8E70B3; --tp-grey: #A3A8AE; }
+
+.tp-mark { display: inline-block; }
+.tp-mark svg { width: 100%; height: 100%; display: block; }
+.tp-strip { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin: .6rem 0 .45rem; font-size: .92rem; color: var(--ink-soft); }
+.tp-strip b { color: var(--ink); font-weight: 800; font-variant-numeric: tabular-nums; }
+.tp-score b { display: inline-block; font-size: 1.05rem; }          /* a block of its own, so it can swell as the points land */
+/* when the knock comes; when it's due, lettered on the knock's ochre */
+.tp-knock { display: inline-flex; align-items: center; padding: .1rem .45rem; border-radius: 4px; font-size: .8rem; font-weight: 700; white-space: nowrap; min-width: 0; }
+.tp-knock.now { background: var(--tp-in); color: var(--on-c0); font-weight: 800; }
+/* the knock's chip with what goes with it */
+.tp-kn { display: inline-flex; align-items: center; gap: .3rem; min-width: 0; }
+/* skipping a due knock: a small button after the knock's chip, or while its hundred per cent stands a badge in its place (the strip never grows: one or the other) */
+/* small to look at and, with its invisible margin, 44 pixels to press: the strip can't grow, so the finger's room is the button's own */
+.tp-skip { position: relative; flex: none; padding: .1rem .5rem; border-radius: 4px; border: 1px solid var(--tp-in); background: transparent; color: var(--ink); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.tp-skip::after { content: ""; position: absolute; inset: -.85rem -.6rem; }
+.tp-skip:disabled { opacity: .45; cursor: default; }
+.tp-skip[hidden], .tp-boost[hidden] { display: none; }
+.tp-boost { flex: none; padding: .1rem .4rem; border-radius: 4px; border: 1px solid var(--tp-in); color: var(--tp-in); font-size: .8rem; font-weight: 800; white-space: nowrap; }
+/* Levels: the goal in the strip's last place, the stars it has earned once it is met, and under the strip the meter, its
+   bar in three equal stretches (to the goal, to the second star, to the third) with a tick at each of the first two */
+.tp-aim.met b { color: var(--c1); }
+.tp-meter { display: flex; align-items: center; gap: .55rem; margin: 0 0 .45rem; font-size: .72rem; }
+.tp-meter[hidden] { display: none; }
+.tp-lname { flex: 0 1 auto; min-width: 0; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 800; font-stretch: var(--wide);
+  text-transform: var(--caps); letter-spacing: calc(.1em * var(--track)); color: var(--ink-soft); }
+.tp-bar { position: relative; flex: 1 1 0; height: .5rem; border: 1px solid var(--rule); border-radius: 2px; background: var(--yard); }
+.tp-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--tp-in); transition: width .45s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tp-bar i { transition: none; } }
+.tp-bar u { position: absolute; top: -1px; bottom: -1px; width: 1px; background: var(--brass); }
+.tp-bar u:nth-of-type(1) { left: 33.33%; }
+.tp-bar u:nth-of-type(2) { left: 66.67%; }
+.tp-lstars { flex: none; color: var(--brass); letter-spacing: .12em; font-size: .8rem; }
+
+/* a table of several floors: buttons for the one in play, over the table's corner, the highest floor at the top */
+.tp-floors { position: absolute; top: .4rem; right: .4rem; z-index: 5; display: grid; gap: .3rem; }
+.tp-floors[hidden] { display: none; }
+.tp-floors button { position: relative; display: flex; justify-content: space-between; gap: .6rem; min-width: 5.2rem; min-height: 2.25rem; align-items: center; padding: .2rem .55rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: color-mix(in srgb, var(--sheet) 88%, transparent); color: var(--ink-soft); font: inherit; font-size: .68rem; font-weight: 800;
+  font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); cursor: pointer; }
+/* 36 to look at, 44 to press: the margin is the finger's, and the buttons' neighbours share it */
+.tp-floors button::after { content: ""; position: absolute; inset: -.25rem -.2rem; }
+.tp-floors button[aria-pressed="true"] { background: var(--plate); color: var(--plate-ink); border-color: var(--plate); }
+.tp-floors b { font-variant-numeric: tabular-nums; }
+.tp-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* the table: as large as its room allows; the canvas draws it, the svg over it draws what the page says about it */
+.tp-table { position: relative; }
+.tp-stage { position: absolute; inset: 0; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.tp-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* clipped to the table's box: zoomed in, what's drawn over a domino out of view mustn't spill onto the strip */
+.tp-over { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.tp-marks { filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--sheet) 90%, transparent)); }
+/* a ring round what a knock would fell; a faint one round what it would leave standing */
+.tp-ring { fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-dasharray: 5 3; stroke-linejoin: round; }
+.tp-stay { fill: none; stroke: var(--ink-soft); stroke-width: 1.1; stroke-dasharray: 2 4; stroke-linejoin: round; opacity: .8; }
+/* the two ways to push a pressed domino, along its axis; the one slid to filled */
+.tp-arrow { fill: color-mix(in srgb, var(--sheet) 82%, transparent); stroke: var(--ink); stroke-width: 1.4; stroke-linejoin: round; }
+.tp-arrow.on { fill: var(--ink); }
+/* the chosen domino's handle, out along its axis: an arm and a knob to turn it by */
+.tp-handle line { stroke-linecap: round; }
+.tp-handle .under { stroke: var(--ink); stroke-width: 4.8; }
+.tp-handle .arm { stroke: var(--brass); stroke-width: 2.4; }
+.tp-handle circle { fill: var(--brass); stroke: var(--ink); stroke-width: 1.6; }
+.tp-over text { font-weight: 800; fill: var(--ink); text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: var(--sheet); stroke-width: 3.2; stroke-linejoin: round; font-variant-numeric: tabular-nums; }
+.tp-over text.tp-hint { font-weight: 650; fill: var(--ink-soft); stroke: none; }
+.tp-over text.tp-ltitle { letter-spacing: .08em; text-transform: uppercase; stroke: none; }
+.tp-plaque { fill: color-mix(in srgb, var(--sheet) 90%, transparent); stroke: var(--brass); stroke-width: 1; }
+
+/* a domino drawn flat: a slab seen from above and in front (the tray, your hand, the table where there's no WebGL) */
+.tp-slab polygon.tp-face, .tp-slab polygon.tp-side, .tp-slab polygon.tp-top { stroke: color-mix(in srgb, var(--ink) 55%, transparent); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+/* each colour sets its own --k (enamel) and --ki (ink of its pips); the faces, tops and sides come from them. Classic's three are the theme's own;
+   a level's (.lv) are the nine and the rainbow. A gate's upper half (.tp-up) names its own colour in kb<n>. */
+.tp-slab { --k: var(--c0); --ki: var(--on-c0); }
+.tp-slab.k1 { --k: var(--c1); --ki: var(--on-c); }
+.tp-slab.k2 { --k: var(--c2); --ki: var(--on-c); }
+.tp-slab.lv.k0, .tp-up.kb0 { --k: var(--tp-yellow); --ki: var(--on-c0); }
+.tp-slab.lv.k1, .tp-up.kb1 { --k: var(--tp-red); --ki: var(--on-c); }
+.tp-slab.lv.k2, .tp-up.kb2 { --k: var(--tp-blue); --ki: var(--on-c); }
+.tp-slab.lv.k3, .tp-up.kb3 { --k: var(--tp-black); --ki: #F7F1E3; }
+.tp-slab.lv.k4, .tp-up.kb4 { --k: var(--tp-white); --ki: var(--tp-ink-dark); }
+.tp-slab.lv.k5, .tp-up.kb5 { --k: var(--tp-orange); --ki: #F7F1E3; }
+.tp-slab.lv.k6, .tp-up.kb6 { --k: var(--tp-green); --ki: #F7F1E3; }
+.tp-slab.lv.k7, .tp-up.kb7 { --k: var(--tp-purple); --ki: #F7F1E3; }
+.tp-slab.lv.k8, .tp-up.kb8 { --k: var(--tp-grey); --ki: var(--tp-ink-dark); }
+.tp-slab.lv.k9 { --k: var(--tp-rainbow); --ki: var(--tp-ink-dark); }
+.tp-slab .tp-face { fill: var(--k); }
+.tp-slab.lv.k9 .tp-face { fill: url(#tp-rainbow); }
+.tp-slab .tp-top { fill: color-mix(in srgb, var(--k) 68%, #fff); }
+.tp-slab .tp-side { fill: color-mix(in srgb, var(--k) 72%, #000); }
+.tp-pip { fill: var(--ki); }
+.tp-pip.hollow { fill: none; stroke: var(--ki); stroke-width: 1.3; vector-effect: non-scaling-stroke; }
+.tp-groove { fill: none; stroke: color-mix(in srgb, var(--ki) 55%, transparent); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* a heavy domino's and a gate's band, in brass */
+.tp-band { fill: var(--brass); stroke: color-mix(in srgb, var(--ink) 55%, transparent); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.tp-slab.ghost { opacity: .6; }
+
+/* under the table: the three pieces; at the end, how it went and New game, in the same room */
+.tp-side { display: grid; gap: .45rem; }
+.tp-tray { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); gap: .5rem; height: 7rem; }
+.tp-tray[hidden] { display: none; }
+/* one cell the size of the box, so the picture fits it whatever the box's shape (the side column's are wide and short) */
+.tp-piece { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; min-width: 0; min-height: 0; padding: .4rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--tp-soft);
+  touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.tp-piece svg { width: 100%; height: 100%; display: block; pointer-events: none; overflow: visible; }
+.tp-piece.lifted svg { opacity: .2; }
+.tp-piece.cant svg { opacity: .35; filter: grayscale(1); }
+/* the next hand, waiting for the knock */
+.tp-tray.waiting .tp-piece svg { opacity: .45; }
+.tp-piece:disabled { background: transparent; cursor: default; }
+.tp-go { min-height: 3.125rem; border: 0; border-radius: 4px; background: var(--plate); color: var(--plate-ink); font: inherit; font-size: .86rem; font-weight: 800;
+  font-stretch: 106%; letter-spacing: calc(.07em * var(--track)); text-transform: var(--caps); outline: 1px solid color-mix(in srgb, var(--plate-ink) 55%, transparent); outline-offset: -5px; cursor: pointer; }
+.tp-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .8rem; height: 7rem; }
+.tp-result .tp-go { padding: 0 1.3rem; }
+.tp-acts { display: grid; gap: .4rem; }
+.tp-go.quiet { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--brass); outline: 0; min-height: 2.5rem; }
+.tp-go[hidden] { display: none; }
+.tp-result[hidden] { display: none; }
+.tp-verdict { margin: 0; font-weight: 750; line-height: 1.3; }
+/* the piece in your hand, over everything, at the table's size */
+.tp-float { position: fixed; z-index: 30; pointer-events: none; filter: drop-shadow(0 6px 8px rgba(28, 42, 52, .3)); }
+.tp-float svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+/* max-content: a fixed box at left 50% is otherwise shrunk to the half of the screen right of it, and a line of words wrapped to four */
+.tp-toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 1.2rem); transform: translateX(-50%); z-index: 40;
+  width: max-content; max-width: min(92vw, 30rem); margin: 0; padding: .55rem .9rem; border-radius: 4px; background: var(--ink); color: var(--yard);
+  font-weight: 650; font-size: .95rem; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s; }
+.tp-toast.show { opacity: 1; }
+
+/* held sideways: the table on the left with all the height; the score, the knock and the pieces beside it, the pieces
+   low where a thumb is */
+@media (orientation: landscape) and (min-width: 700px) {
+  #app.topple { --beside: 17rem; grid-template-rows: auto auto minmax(0, 1fr); }
+  #app.topple .tp-head { grid-column: 2; grid-row: 2; }
+  #app.topple .tp-strip { flex-direction: column; align-items: flex-start; gap: .35rem; margin-top: 1rem; }
+  #app.topple .tp-table { grid-column: 1; grid-row: 2 / span 2; margin-top: .8rem; }
+  #app.topple .tp-side { grid-column: 2; grid-row: 3; align-content: end; }
+  #app.topple .tp-tray { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(3, 7rem); height: auto; }
+  #app.topple .tp-result { grid-template-columns: 1fr; height: auto; }
+}
+
+/* the flat table, where there's no WebGL: birch in a mahogany frame, brass between */
+.tp-flat-frame { fill: var(--tp-frame, #5d2212); stroke: var(--tp-frame-edge, #2c0e06); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-brass { fill: var(--tp-metal, #caa040); }
+.tp-flat-birch { fill: var(--tp-field, #e6cd9f); }
+.tp-flat-cell { fill: none; stroke: var(--tp-line, #7a4a2e); stroke-width: 1; vector-effect: non-scaling-stroke; }
+/* a level's terrain on the flat table: no table (dark wood), a pool, a stone, a step up (its side and its top), gilding */
+.tp-flat-void { fill: var(--tp-void, #2c0e06); }
+.tp-flat-water { fill: var(--tp-water, #4f93b8); stroke: var(--tp-water-edge, #2a6a92); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-rock { fill: #8a8378; stroke: #55504a; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-step-side { fill: var(--tp-step-side, #a4814f); stroke: var(--tp-line, #7a4a2e); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-step { fill: var(--tp-step, #efdcb4); stroke: var(--tp-line, #7a4a2e); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-step.h2 { fill: var(--tp-step2, #f6e8c8); }
+.tp-flat-step.h3 { fill: var(--tp-step3, #f6e8c8); }
+.tp-flat-step.h4 { fill: var(--tp-step4, #f6e8c8); }
+/* the scenes (topple-levels.js) painted flat: what the 3D table makes of marble, planks, flagstones and gravel, in one colour each */
+.tp-flatview[data-scene="marble"] { --tp-frame: #e6e2d8; --tp-frame-edge: #8a857a; --tp-metal: #d4ab4a; --tp-field: #2b292d; --tp-line: #9a7b30; --tp-void: #cfd6e0; --tp-step: #46424a; --tp-step2: #55505a; --tp-step3: #55505a; --tp-step4: #55505a; --tp-step-side: #cfcabe; }
+.tp-flatview[data-scene="jetty"] { --tp-frame: #4b3b2c; --tp-frame-edge: #1e1710; --tp-metal: #8c9498; --tp-field: #a89c88; --tp-line: #efe8d8; --tp-void: #2a6a82; --tp-water: #4f9fb0; --tp-water-edge: #1c5873; --tp-step: #b8ac98; --tp-step2: #c4b8a4; --tp-step3: #c4b8a4; --tp-step4: #c4b8a4; --tp-step-side: #6a5a46; }
+.tp-flatview[data-scene="cliff"] { --tp-frame: #9a9387; --tp-frame-edge: #57514a; --tp-metal: #7e9650; --tp-field: #cdbb9a; --tp-line: #6a5a45; --tp-void: #aab4c2; --tp-step: #d8c8a8; --tp-step2: #e0d2b4; --tp-step3: #e8dcc0; --tp-step4: #f0e6cc; --tp-step-side: #8f8573; }
+.tp-flatview[data-scene="garden"] { --tp-frame: #2d2c30; --tp-frame-edge: #131316; --tp-metal: #b89a4a; --tp-field: #bfb5a2; --tp-line: #8f8571; --tp-water: #6aa592; --tp-water-edge: #265a4c; --tp-step: #cac0ae; --tp-step2: #d4cbba; --tp-step3: #d4cbba; --tp-step4: #d4cbba; --tp-step-side: #5d5a52; }
+.tp-plank-top { fill: #b98a52; stroke: #6b4426; stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.tp-plank-edge { fill: #7b5230; stroke: #4a2e16; stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.tp-plank-board { fill: none; stroke: #6b4426; stroke-width: 1; opacity: .55; vector-effect: non-scaling-stroke; }
+.tp-plank.ghost { opacity: .62; }
+.tp-flat-ball .body { fill: #b8402e; stroke: #5a1d14; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-ball .shine { fill: #fff; opacity: .55; }
+@media (prefers-color-scheme: dark) { html:not([data-mode="day"]) .tp-flat-ball .body { fill: #e8806f; stroke: #8a3a2e; } }
+html[data-mode="night"] .tp-flat-ball .body { fill: #e8806f; stroke: #8a3a2e; }
+.tp-flat-gilt { fill: none; stroke: #caa040; stroke-width: 2; vector-effect: non-scaling-stroke; }
+
+/* the menu's levels: three to a row, each its table in miniature, its number and name, and its stars */
+.tp-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4rem; margin: .5rem 0; }
+.tp-levels button { display: grid; grid-template-rows: auto auto 1fr auto; gap: .2rem; padding: .35rem .4rem .4rem; border: 1px solid var(--rule); border-radius: 5px; background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.tp-levels button.done { background: var(--tp-soft); }
+.tp-levels button[aria-current] { border-color: var(--tp-in); box-shadow: inset 0 0 0 1.5px var(--tp-in); }
+.tp-levels button:disabled { opacity: .4; cursor: default; }
+.tp-lmap { aspect-ratio: 9.4 / 7.9; width: 100%; }
+.tp-lmap svg { width: 100%; height: 100%; display: block; }
+.tp-lrow { display: flex; justify-content: space-between; align-items: baseline; gap: .3rem; min-width: 0; }
+.tp-lrow b { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.tp-lrow span { color: var(--brass); font-size: .66rem; letter-spacing: .1em; white-space: nowrap; }
+.tp-lrow span.lock { color: var(--ink-soft); font-size: .56rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.08em * var(--track)); }
+/* a name is read whole (Archipelago, Gilded cross): two lines of the plain width where it must, never cut short with dots */
+.tp-lnamed { font-size: .62rem; font-weight: 800; text-transform: var(--caps); letter-spacing: calc(.05em * var(--track)); line-height: 1.2; color: var(--ink-soft); overflow-wrap: anywhere; }
+.tp-map-cell { fill: color-mix(in srgb, var(--brass) 20%, var(--sheet)); stroke: color-mix(in srgb, var(--ink) 18%, transparent); stroke-width: .05; }
+.tp-map-cell.h1 { fill: color-mix(in srgb, var(--brass) 40%, var(--sheet)); }
+.tp-map-cell.h2 { fill: color-mix(in srgb, var(--brass) 62%, var(--sheet)); }
+.tp-map-water { fill: color-mix(in srgb, var(--c2) 72%, var(--sheet)); }
+.tp-map-stone { fill: var(--ink-soft); }
+.tp-map-gilt { fill: var(--brass); }
+.tp-map-cell.marsh { fill: color-mix(in srgb, var(--c1) 30%, var(--sheet)); }
+.tp-map-floor-g.up .tp-map-cell { stroke: color-mix(in srgb, var(--ink) 35%, transparent); stroke-width: .08; }
+.tp-map-floor-g.cave .tp-map-cell { fill: color-mix(in srgb, var(--ink) 22%, var(--sheet)); }
+.tp-map-cup { fill: none; stroke: var(--brass); stroke-width: .1; }
+.tp-map-spring { fill: var(--c2); stroke: var(--sheet); stroke-width: .05; }
+.tp-map-hedge { stroke: var(--tp-green); stroke-width: .16; stroke-linecap: round; }
+.tp-map-lip { stroke: var(--ink); stroke-width: .1; stroke-linecap: round; opacity: .7; }
+.tp-map-lip.water { stroke: var(--c2); opacity: 1; }
+.tp-map-stairs { stroke: var(--brass); stroke-width: .08; stroke-dasharray: .22 .16; fill: none; }
+.tp-map-portal { fill: none; stroke: var(--tp-purple); stroke-width: .1; }
+.tp-lgoal { font-size: .6rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-soft); letter-spacing: .04em; }
+
+/* the flat table's floors and the pieces on them: a deck for a floor above, a cave below, marsh and reeds, a cup, a spring, a hedge, a lip and the water over it, a portal, a stair */
+.tp-flat-deck { fill: #b98a52; stroke: #6b4426; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-marsh { fill: #5f7a4a; opacity: .75; }
+.tp-flat-reed { fill: #3c5a2e; }
+.tp-flat-cup { fill: #1c1410; stroke: var(--tp-metal, #caa040); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.tp-flat-spring { fill: #6fb4d6; stroke: #2a6a92; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .85; }
+.tp-flat-hedge { fill: #3f7a45; stroke: #234a28; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tp-flat-lip { stroke: #2c0e06; stroke-width: 2; vector-effect: non-scaling-stroke; opacity: .7; }
+.tp-flat-fall { fill: #8cc6e0; opacity: .6; }
+.tp-flat-portal { fill: none; stroke: #8e70b3; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.tp-flat-stairs { stroke: var(--tp-metal, #caa040); stroke-width: 2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+
+/* feature help (topple-help-ui.js): a sheet with a little scene, its words and Back / Next. The scenes are drawn as the flat table is,
+   so they take its classes; a small table has no birch to stand on, so its ground is the birch */
+.tp-flat-cell.tp-flat-ground { fill: var(--tp-field, #e6cd9f); }
+dialog.tp-help { max-height: 92vh; max-height: 92svh; overflow-y: auto; overscroll-behavior: contain; }
+.tp-hstage { position: relative; height: 10.5rem; margin: .1rem 0 .8rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--yard); overflow: hidden; }
+.tp-hframe { position: absolute; inset: 0; }
+.tp-hstage.still { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: .3rem; }
+.tp-hstage.still .tp-hframe { position: relative; min-height: 0; }
+.tp-hstage.still .tp-hframe + .tp-hframe { border-left: 1px solid var(--rule); }
+.tp-hsvg { width: 100%; height: 100%; display: block; }
+.tp-hsteps text { fill: var(--ink); stroke: var(--sheet); stroke-width: .09; paint-order: stroke; font-weight: 800; stroke-linejoin: round; }
+.tp-hcap, .tp-hmarks { position: absolute; font-size: .7rem; font-weight: 800; font-stretch: var(--wide); text-transform: var(--caps); letter-spacing: calc(.1em * var(--track)); font-variant-numeric: tabular-nums; }
+.tp-hcap { left: .4rem; bottom: .3rem; padding: .05rem .2rem; border-radius: 3px; background: color-mix(in srgb, var(--yard) 82%, transparent); color: var(--ink-soft); }
+.tp-hmarks { right: .55rem; top: .4rem; color: var(--brass-lo, var(--brass)); }
+.tp-hmarks.late { opacity: 0; transition: opacity .25s; }
+.tp-hmarks.late.on { opacity: 1; }
+.tp-htext p { margin: 0 0 .5rem; line-height: 1.38; font-size: .92rem; }
+.tp-hnav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .6rem; margin-top: .7rem; }
+.tp-hnav .btn { padding-inline: 1rem; }
+.tp-hnav #tpHelpBack { justify-self: start; }
+.tp-hnav #tpHelpNext { justify-self: end; min-width: 6rem; }
+.tp-hnav #tpHelpBack:disabled { visibility: hidden; }
+.tp-hat { font-size: .75rem; font-weight: 750; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+/* the Lab's shapes: a grid of the pieces the chosen block comes in */
+.tp-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(3.4rem, 1fr)); gap: .35rem; margin: .4rem 0; }
+.tp-shapes button { display: grid; place-items: center; height: 3.4rem; padding: .15rem; border: 1px solid var(--rule); border-radius: 4px; background: transparent; cursor: pointer; }
+.tp-shapes button.on { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.tp-shapes svg { width: 100%; height: 100%; display: block; }
